@@ -1,0 +1,1369 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Hide &amp; Seek - Urban Hunt</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body, #app { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #050805;
+      color: #c8e6c9;
+      font-family: Rajdhani, "Arial Narrow", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+    button, input {
+      font: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+    :root {
+      --bg: #060a06;
+      --bg2: #0d140d;
+      --bg3: #141f14;
+      --line: rgba(0, 255, 136, 0.18);
+      --line-soft: rgba(0, 255, 136, 0.08);
+      --primary: #00ff88;
+      --secondary: #00ccff;
+      --danger: #ff3355;
+      --warn: #ffcc00;
+      --text: #c8e6c9;
+      --muted: rgba(200, 230, 201, 0.48);
+      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      --glow: 0 0 18px rgba(0, 255, 136, 0.45);
+    }
+    .app {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background:
+        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,.12) 2px, rgba(0,0,0,.12) 4px),
+        radial-gradient(circle at 50% 15%, rgba(0,255,136,.08), transparent 36%),
+        var(--bg);
+      color: var(--text);
+    }
+    .screen {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .nav {
+      height: 52px;
+      flex: 0 0 52px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--line);
+    }
+    .back {
+      width: 34px;
+      height: 34px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 24px;
+      cursor: pointer;
+    }
+    .back:hover { color: var(--text); }
+    .title {
+      flex: 1;
+      color: var(--primary);
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      text-shadow: var(--glow);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .badge {
+      border: 1px solid var(--line);
+      color: var(--muted);
+      padding: 4px 8px;
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 1.3px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .badge.hider, .role-hider { color: var(--secondary); border-color: var(--secondary); }
+    .badge.seeker, .role-seeker { color: var(--danger); border-color: var(--danger); }
+    .badge.admin, .role-admin { color: var(--primary); border-color: var(--primary); }
+
+    .lobby {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 22px;
+    }
+    .logo {
+      color: var(--primary);
+      font-size: clamp(38px, 12vw, 58px);
+      font-weight: 900;
+      letter-spacing: 7px;
+      line-height: .95;
+      text-align: center;
+      text-shadow: var(--glow), 0 0 36px rgba(0,255,136,.25);
+      text-transform: uppercase;
+      cursor: pointer;
+      user-select: none;
+    }
+    .sub {
+      margin: 8px 0 30px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 3.5px;
+      text-align: center;
+      text-transform: uppercase;
+    }
+    .input {
+      width: min(100%, 330px);
+      margin-bottom: 18px;
+      padding: 13px 14px;
+      background: var(--bg2);
+      border: 1px solid var(--line);
+      color: var(--text);
+      outline: 0;
+      font-family: var(--mono);
+      font-size: 13px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+    .input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 1px var(--primary);
+    }
+    .roles {
+      width: min(100%, 330px);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .role-card {
+      min-height: 128px;
+      padding: 17px 10px;
+      border: 1px solid var(--line);
+      background: var(--bg2);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      cursor: pointer;
+    }
+    .role-card:active { transform: scale(.98); }
+    .role-card.hider:hover { border-color: var(--secondary); box-shadow: 0 0 20px rgba(0,204,255,.16); }
+    .role-card.seeker:hover { border-color: var(--danger); box-shadow: 0 0 20px rgba(255,51,85,.16); }
+    .glyph {
+      width: 23px;
+      height: 23px;
+      border: 2px solid currentColor;
+      box-shadow: 0 0 12px currentColor;
+    }
+    .glyph.hider { color: var(--secondary); transform: rotate(45deg); }
+    .glyph.seeker { color: var(--danger); border-radius: 50%; }
+    .role-label {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+    .role-desc {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 8.5px;
+      line-height: 1.45;
+      letter-spacing: 1px;
+      text-align: center;
+      text-transform: uppercase;
+    }
+    .admin-link {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .admin-link:hover { color: var(--primary); }
+
+    .body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      background: var(--bg2);
+      padding: 12px 14px;
+    }
+    .card.soft { background: var(--line-soft); }
+    .card-title {
+      margin-bottom: 11px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+    .role-display {
+      align-items: center;
+      text-align: center;
+      padding: 15px;
+    }
+    .kicker {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 8px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+    .role-big {
+      margin-top: 6px;
+      font-size: 30px;
+      font-weight: 900;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+    }
+    .mono {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 1.3px;
+    }
+    .roster {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .player {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 10px;
+      border: 1px solid var(--line-soft);
+      background: var(--bg3);
+    }
+    .player-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+    .role-pill {
+      border: 1px solid currentColor;
+      padding: 2px 6px;
+      font-family: var(--mono);
+      font-size: 7.5px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .ready {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 8px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px;
+    }
+    .stat {
+      border: 1px solid var(--line);
+      background: var(--bg2);
+      padding: 10px 6px;
+      text-align: center;
+    }
+    .stat-val {
+      color: var(--primary);
+      font-family: var(--mono);
+      font-size: 20px;
+      font-weight: 900;
+      line-height: 1;
+      text-shadow: var(--glow);
+    }
+    .stat-label {
+      margin-top: 4px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 7.5px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .waiting-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      text-align: center;
+      padding: 23px 16px;
+    }
+    .dots {
+      display: flex;
+      gap: 7px;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--primary);
+      animation: dot 1.4s infinite both;
+    }
+    .dot:nth-child(2) { animation-delay: .18s; }
+    .dot:nth-child(3) { animation-delay: .36s; }
+    @keyframes dot {
+      0%, 80%, 100% { transform: scale(0); opacity: 0; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+
+    .field { margin-bottom: 12px; }
+    .field:last-child { margin-bottom: 0; }
+    .field-label {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 8px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .field-label strong { color: var(--secondary); font-size: 10px; }
+    .grid2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .coord {
+      width: 100%;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      background: var(--bg3);
+      color: var(--text);
+      outline: 0;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+    .range {
+      width: 100%;
+      appearance: none;
+      height: 3px;
+      background: var(--bg3);
+      outline: 0;
+    }
+    .range::-webkit-slider-thumb {
+      appearance: none;
+      width: 15px;
+      height: 15px;
+      background: var(--primary);
+      box-shadow: var(--glow);
+      cursor: pointer;
+    }
+    .btn {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--bg3);
+      color: var(--text);
+      padding: 11px 10px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .btn.primary {
+      margin-top: 8px;
+      border-color: var(--primary);
+      background: var(--primary);
+      color: var(--bg);
+      box-shadow: var(--glow);
+    }
+    .btn.danger {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+    .btn:disabled {
+      opacity: .32;
+      cursor: not-allowed;
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px;
+    }
+
+    .map-pane {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+      background: #050805;
+    }
+    .map {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 180px;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(0,255,136,.05) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(0,255,136,.05) 1px, transparent 1px),
+        radial-gradient(circle at 30% 22%, rgba(0,204,255,.08), transparent 22%),
+        radial-gradient(circle at 78% 64%, rgba(255,51,85,.07), transparent 20%),
+        #050805;
+      background-size: 34px 34px, 34px 34px, auto, auto, auto;
+    }
+    .map::before {
+      content: "";
+      position: absolute;
+      inset: -10%;
+      background:
+        linear-gradient(28deg, transparent 43%, rgba(200,230,201,.14) 44%, rgba(200,230,201,.14) 45%, transparent 46%),
+        linear-gradient(142deg, transparent 48%, rgba(200,230,201,.10) 49%, rgba(200,230,201,.10) 50%, transparent 51%),
+        linear-gradient(96deg, transparent 58%, rgba(200,230,201,.08) 59%, rgba(200,230,201,.08) 60%, transparent 61%);
+      opacity: .9;
+      transform: rotate(-4deg);
+    }
+    .map::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(circle at 50% 50%, transparent 45%, rgba(0,0,0,.45));
+    }
+    .zone, .lock-zone {
+      position: absolute;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    .zone {
+      border: 2px dashed var(--secondary);
+      background: rgba(0,204,255,.045);
+      box-shadow: inset 0 0 28px rgba(0,204,255,.08), 0 0 14px rgba(0,204,255,.18);
+    }
+    .lock-zone {
+      border: 1px dashed var(--warn);
+      background: rgba(255,204,0,.045);
+    }
+    .marker {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      transform: translate(-50%, -50%);
+      z-index: 3;
+    }
+    .marker.hider {
+      background: var(--secondary);
+      transform: translate(-50%, -50%) rotate(45deg);
+      box-shadow: 0 0 14px var(--secondary);
+    }
+    .marker.ping {
+      background: rgba(255,51,85,.62);
+      border: 2px solid var(--danger);
+      transform: translate(-50%, -50%) rotate(45deg);
+      box-shadow: 0 0 12px rgba(255,51,85,.65);
+    }
+    .marker.seeker {
+      border-radius: 50%;
+      background: var(--danger);
+      border: 2px solid rgba(255,51,85,.55);
+      box-shadow: 0 0 12px rgba(255,51,85,.75);
+    }
+    .marker.me {
+      background: var(--primary);
+      border-color: rgba(0,255,136,.75);
+      box-shadow: 0 0 14px rgba(0,255,136,.8);
+    }
+    .marker.objective {
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      border: 2px solid var(--secondary);
+      box-shadow: 0 0 13px var(--secondary);
+    }
+    .mlabel {
+      position: absolute;
+      z-index: 4;
+      transform: translate(9px, 8px);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 8px;
+      letter-spacing: .8px;
+      text-shadow: 0 0 8px #000;
+      white-space: nowrap;
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .small-map {
+      height: 190px;
+      border: 1px solid var(--line);
+      overflow: hidden;
+    }
+
+    .panel {
+      flex: 0 0 auto;
+      max-height: 47vh;
+      overflow-y: auto;
+      border-top: 1px solid var(--line);
+      background: var(--bg2);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .proximity {
+      border: 1px solid var(--line);
+      background: var(--line-soft);
+      text-align: center;
+      padding: 12px 10px;
+    }
+    .prox-label {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 8px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+    .prox-value {
+      margin-top: 3px;
+      font-size: 39px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+    }
+    .near { color: var(--danger); text-shadow: 0 0 24px var(--danger); animation: pulse .75s infinite; }
+    .far { color: var(--warn); text-shadow: 0 0 20px var(--warn); }
+    .distant { color: var(--primary); text-shadow: var(--glow); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.38} }
+    .objective, .timer, .health, .lockdown, .ping {
+      border: 1px solid var(--line);
+      background: var(--line-soft);
+      padding: 9px 12px;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .obj-name {
+      margin-top: 3px;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 1px;
+    }
+    .bar {
+      height: 3px;
+      background: var(--bg3);
+      overflow: hidden;
+      flex: 1;
+    }
+    .fill {
+      height: 100%;
+      background: var(--secondary);
+      transition: width .25s linear;
+    }
+    .time {
+      color: var(--secondary);
+      font-family: var(--mono);
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 1.5px;
+    }
+    .lockdown {
+      border-color: rgba(255,204,0,.35);
+      color: var(--warn);
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+    .ping-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ping {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .ping-led {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--danger);
+      box-shadow: 0 0 8px var(--danger);
+      flex: 0 0 auto;
+    }
+    .claim-tap {
+      border: 1px solid var(--primary);
+      background: rgba(0,255,136,.08);
+      color: var(--primary);
+      padding: 12px;
+      text-align: center;
+      cursor: pointer;
+      animation: pulse 2s infinite;
+    }
+    .claim-sheet {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 20;
+      border-top: 2px solid var(--primary);
+      background: var(--bg2);
+      padding: 14px 14px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      animation: slide-up .22s ease;
+    }
+    @keyframes slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .sheet-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .sheet-title {
+      color: var(--primary);
+      font-size: 15px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      text-shadow: var(--glow);
+    }
+    .close {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 24px;
+      line-height: 1;
+    }
+    .checks {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .check {
+      border: 1px solid var(--line);
+      background: var(--bg3);
+      padding: 9px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .check.ok {
+      border-color: rgba(0,255,136,.45);
+      background: rgba(0,255,136,.06);
+    }
+    .check-dot {
+      width: 14px;
+      height: 14px;
+      border: 1px solid currentColor;
+      border-radius: 50%;
+      flex: 0 0 auto;
+    }
+    .check.ok .check-dot {
+      background: var(--primary);
+      box-shadow: var(--glow);
+    }
+    .photo-preview {
+      display: none;
+      width: 100%;
+      height: 88px;
+      object-fit: cover;
+      border: 1px solid var(--primary);
+      background: var(--bg3);
+    }
+    .photo-preview.show { display: block; }
+    .oob {
+      position: fixed;
+      inset: 0;
+      z-index: 15;
+      pointer-events: none;
+      border: 3px solid var(--danger);
+      animation: pulse .5s infinite;
+    }
+    .oob span {
+      position: absolute;
+      top: 58px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--danger);
+      color: white;
+      padding: 6px 16px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .gameover {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 28px 22px;
+      text-align: center;
+    }
+    .winner {
+      font-size: 50px;
+      font-weight: 900;
+      letter-spacing: 5px;
+      line-height: 1.05;
+      text-transform: uppercase;
+    }
+    @media (min-width: 760px) {
+      .app {
+        max-width: 430px;
+        margin: 0 auto;
+        border-left: 1px solid var(--line);
+        border-right: 1px solid var(--line);
+      }
+      body {
+        background:
+          linear-gradient(90deg, rgba(0,255,136,.04) 1px, transparent 1px),
+          #020402;
+        background-size: 80px 80px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    const LANDMARKS = [
+      { name: "Barbican Library", lat: 51.5199, lng: -0.0867 },
+      { name: "Museum of London", lat: 51.5177, lng: -0.0966 },
+      { name: "St Pauls Cathedral", lat: 51.5138, lng: -0.0984 },
+      { name: "Tate Modern", lat: 51.5076, lng: -0.0994 },
+      { name: "London Bridge Station", lat: 51.5031, lng: -0.0872 },
+      { name: "Borough Market", lat: 51.5055, lng: -0.0910 },
+      { name: "Southwark Cathedral", lat: 51.5056, lng: -0.0875 },
+      { name: "Guildhall", lat: 51.5155, lng: -0.0922 },
+      { name: "Cannon Street Station", lat: 51.5113, lng: -0.0904 },
+      { name: "The Monument", lat: 51.5101, lng: -0.0860 }
+    ];
+
+    const defaultConfig = {
+      pingIntervalMinutes: 3,
+      locationDelayMinutes: 3,
+      lockdownIntervalCount: 3,
+      globalSqueezePercentage: 10,
+      lockdownRadius: 500,
+      shrinkIntervalSeconds: 120,
+      near: 200,
+      far: 1000
+    };
+
+    const state = {
+      screen: "lobby",
+      role: null,
+      playerName: "",
+      roster: [
+        { id: "d1", name: "Shadow", role: "HIDER" },
+        { id: "d2", name: "Alpha-2", role: "SEEKER" },
+        { id: "d3", name: "Bravo-1", role: "SEEKER" }
+      ],
+      zoneSetup: { lat: 51.5125, lng: -0.0915, radius: 900 },
+      config: { ...defaultConfig },
+      game: null,
+      paused: false,
+      photoUrl: null,
+      claimOpen: false,
+      winner: "SEEKERS"
+    };
+
+    const app = document.getElementById("app");
+    let timer = null;
+
+    function meters(a, b) {
+      const R = 6371000;
+      const toR = Math.PI / 180;
+      const p1 = a.lat * toR;
+      const p2 = b.lat * toR;
+      const dp = (b.lat - a.lat) * toR;
+      const dl = (b.lng - a.lng) * toR;
+      const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(h));
+    }
+
+    function moveToward(from, to, amount) {
+      const dlat = to.lat - from.lat;
+      const dlng = to.lng - from.lng;
+      const mag = Math.sqrt(dlat * dlat + dlng * dlng) || .0001;
+      return {
+        lat: from.lat + (dlat / mag) * amount + (Math.random() - .5) * amount * .7,
+        lng: from.lng + (dlng / mag) * amount + (Math.random() - .5) * amount * .7
+      };
+    }
+
+    function clampToZone(point, zone) {
+      const d = meters(point, zone);
+      if (d <= zone.radius) return point;
+      const angle = Math.atan2(point.lng - zone.lng, point.lat - zone.lat);
+      const r = zone.radius * .92;
+      return {
+        lat: zone.lat + (r / 111320) * Math.cos(angle),
+        lng: zone.lng + (r / (111320 * Math.cos(zone.lat * Math.PI / 180))) * Math.sin(angle)
+      };
+    }
+
+    function makeGame() {
+      const z = { ...state.zoneSetup, originalRadius: state.zoneSetup.radius };
+      const hider = { lat: z.lat + .0067, lng: z.lng + .0058 };
+      return {
+        id: "HUNT-" + Math.floor(1000 + Math.random() * 9000),
+        phase: "active",
+        startTime: Date.now(),
+        zone: z,
+        shrinkCountdown: Math.min(110, state.config.shrinkIntervalSeconds),
+        pingCount: 0,
+        objIndex: 0,
+        objectivesCleared: 0,
+        oobCount: 0,
+        hider: {
+          name: "Ghost",
+          coords: hider,
+          delayed: { lat: hider.lat - .001, lng: hider.lng - .0012 },
+          lockdown: { lat: hider.lat, lng: hider.lng, radius: state.config.lockdownRadius },
+          proximity: "Distant",
+          objective: LANDMARKS[0],
+          isOob: false
+        },
+        seekers: [
+          { name: "Alpha-1", coords: { lat: z.lat - .006, lng: z.lng - .005 }, me: true },
+          { name: "Alpha-2", coords: { lat: z.lat - .002, lng: z.lng + .007 }, me: false },
+          { name: "Bravo-1", coords: { lat: z.lat + .004, lng: z.lng - .008 }, me: false }
+        ]
+      };
+    }
+
+    function nav(title, role, subtitle, back) {
+      const roleClass = role ? role.toLowerCase() : "";
+      return `
+        <div class="nav">
+          ${back ? `<button class="back" data-action="${back}" aria-label="Back">&lt;</button>` : ""}
+          <div class="title">${title}</div>
+          ${role ? `<div class="badge ${roleClass}">${role}</div>` : ""}
+          ${subtitle ? `<div class="badge">${subtitle}</div>` : ""}
+        </div>`;
+    }
+
+    function render() {
+      if (state.screen === "lobby") return renderLobby();
+      if (state.screen === "waiting") return renderWaiting();
+      if (state.screen === "hider") return renderHider();
+      if (state.screen === "seeker") return renderSeeker();
+      if (state.screen === "admin" || state.screen === "admin-live") return renderAdmin();
+      if (state.screen === "gameover") return renderGameOver();
+    }
+
+    function commit(html) {
+      app.innerHTML = `<div class="app">${html}</div>`;
+      wireCommon();
+      drawMaps();
+    }
+
+    function renderLobby() {
+      commit(`
+        <div class="lobby">
+          <div>
+            <div class="logo" data-action="adminTap">HIDE &amp; SEEK</div>
+            <div class="sub">Urban Hunt System / v1.0</div>
+          </div>
+          <input class="input" id="callsign" placeholder="ENTER CALL SIGN" maxlength="20" autocomplete="off" spellcheck="false">
+          <div class="roles">
+            <button class="role-card hider" data-join="HIDER">
+              <span class="glyph hider"></span>
+              <span class="role-label">Hide</span>
+              <span class="role-desc">Evade detection.<br>Complete objectives.</span>
+            </button>
+            <button class="role-card seeker" data-join="SEEKER">
+              <span class="glyph seeker"></span>
+              <span class="role-label">Seek</span>
+              <span class="role-desc">Hunt the hider.<br>Close the net.</span>
+            </button>
+          </div>
+          <button class="admin-link" data-join="ADMIN">... admin access ...</button>
+        </div>`);
+    }
+
+    function join(role) {
+      const input = document.getElementById("callsign");
+      state.role = role;
+      state.playerName = role === "ADMIN" ? "CONTROL" : ((input && input.value.trim()) || (role === "HIDER" ? "Ghost" : "Alpha"));
+      state.roster = state.roster.filter(p => p.id !== "me");
+      if (role !== "ADMIN") state.roster.push({ id: "me", name: state.playerName, role });
+      if (role === "ADMIN") state.screen = state.game && state.game.phase === "active" ? "admin-live" : "admin";
+      else state.screen = state.game && state.game.phase === "active" ? role.toLowerCase() : "waiting";
+      render();
+    }
+
+    function renderWaiting() {
+      const hiders = state.roster.filter(p => p.role === "HIDER").length;
+      const seekers = state.roster.filter(p => p.role === "SEEKER").length;
+      const colorClass = state.role === "HIDER" ? "role-hider" : "role-seeker";
+      commit(`
+        <div class="screen">
+          ${nav("Hide & Seek", null, "WAITING", "lobby")}
+          <div class="body">
+            <div class="card soft role-display">
+              <div class="kicker">your role</div>
+              <div class="role-big ${colorClass}">${state.role}</div>
+              <div class="mono">${state.playerName}</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Connected Devices</div>
+              <div class="roster">${state.roster.map(playerRow).join("")}</div>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="stat-val" style="color:var(--secondary)">${hiders}</div><div class="stat-label">hiders</div></div>
+              <div class="stat"><div class="stat-val" style="color:var(--danger)">${seekers}</div><div class="stat-label">seekers</div></div>
+              <div class="stat"><div class="stat-val">${state.roster.length}</div><div class="stat-label">total</div></div>
+            </div>
+            <div class="card soft waiting-box">
+              <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+              <div class="kicker">waiting for admin to start</div>
+            </div>
+          </div>
+        </div>`);
+    }
+
+    function playerRow(p, liveStatus) {
+      const cls = p.role === "HIDER" ? "role-hider" : "role-seeker";
+      return `
+        <div class="player">
+          <span class="role-pill ${cls}">${p.role}</span>
+          <span class="player-name">${escapeHtml(p.name)}${p.id === "me" ? " (you)" : ""}</span>
+          <span class="ready">${liveStatus || "ready"}</span>
+        </div>`;
+    }
+
+    function renderAdmin() {
+      if (!state.game) state.game = makeGame();
+      const live = state.game.phase === "active" && state.screen === "admin-live";
+      const elapsed = state.game ? Math.floor((Date.now() - state.game.startTime) / 60000) : 0;
+      const g = state.game;
+      commit(`
+        <div class="screen">
+          ${nav("Admin", "ADMIN", live ? "CONTROL" : "SETUP", "lobby")}
+          <div class="body">
+            ${live ? `
+              <div class="stats">
+                <div class="stat"><div class="stat-val">${g.seekers.length + 1}</div><div class="stat-label">players</div></div>
+                <div class="stat"><div class="stat-val">${elapsed}m</div><div class="stat-label">elapsed</div></div>
+                <div class="stat"><div class="stat-val">${Math.round(g.zone.radius)}m</div><div class="stat-label">zone r</div></div>
+              </div>
+              <div class="card">
+                <div class="card-title">Game Control</div>
+                <div class="controls">
+                  <button class="btn" data-action="resume">Start</button>
+                  <button class="btn" data-action="pause">Pause</button>
+                  <button class="btn danger" data-action="end">End</button>
+                </div>
+              </div>
+            ` : `
+              <div class="card">
+                <div class="card-title">Starting Zone</div>
+                <div class="grid2">
+                  <div class="field">
+                    <div class="field-label">Latitude</div>
+                    <input class="coord" data-zone="lat" type="number" step="0.0001" value="${state.zoneSetup.lat}">
+                  </div>
+                  <div class="field">
+                    <div class="field-label">Longitude</div>
+                    <input class="coord" data-zone="lng" type="number" step="0.0001" value="${state.zoneSetup.lng}">
+                  </div>
+                </div>
+                <button class="btn" data-action="myLocation">Use My Location</button>
+                <div class="field" style="margin-top:12px">
+                  <div class="field-label">Initial radius <strong>${state.zoneSetup.radius}m</strong></div>
+                  <input class="range" data-zone="radius" type="range" min="200" max="5000" step="50" value="${state.zoneSetup.radius}">
+                </div>
+                <div class="small-map" data-map="preview"></div>
+              </div>
+            `}
+            <div class="card">
+              <div class="card-title">Game Settings</div>
+              ${slider("globalSqueezePercentage", "Shrink per interval", "%", 1, 30, 1)}
+              ${slider("shrinkIntervalSeconds", "Shrink interval", "s", 30, 600, 30)}
+              ${slider("locationDelayMinutes", "Location delay", " min", 0, 10, .5)}
+              ${slider("pingIntervalMinutes", "Ping interval", " min", .5, 10, .5)}
+              ${slider("lockdownIntervalCount", "Lockdown every N pings", "", 1, 10, 1)}
+              ${slider("lockdownRadius", "Lockdown radius", "m", 100, 1000, 50)}
+              ${slider("near", "Near threshold", "m", 50, 500, 25)}
+              ${slider("far", "Far threshold", "m", 200, 3000, 100)}
+            </div>
+            <div class="card">
+              <div class="card-title">Connected Devices (${state.roster.length})</div>
+              <div class="roster">${state.roster.map(playerRow).join("")}</div>
+              ${live ? "" : `<button class="btn primary" data-action="startGame">Start Game</button>`}
+            </div>
+            ${live ? `
+              <div class="card">
+                <div class="card-title">Live Players</div>
+                ${playerRow({ name: g.hider.name, role: "HIDER" }, `${g.hider.proximity.toLowerCase()} / ${g.hider.isOob ? "oob" : "in"}`)}
+                ${g.seekers.map(s => playerRow({ name: s.name, role: "SEEKER" }, s.me ? "you" : "active")).join("")}
+              </div>
+              <div class="small-map" data-map="admin"></div>
+            ` : ""}
+          </div>
+        </div>`);
+    }
+
+    function slider(key, label, unit, min, max, step) {
+      const value = state.config[key];
+      return `
+        <div class="field">
+          <div class="field-label">${label} <strong>${value}${unit}</strong></div>
+          <input class="range" data-config="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${value}">
+        </div>`;
+    }
+
+    function renderHider() {
+      const g = state.game || (state.game = makeGame());
+      const h = g.hider;
+      const dist = meters(h.coords, h.objective);
+      const inRange = dist < 40;
+      const timer = formatTime(g.shrinkCountdown);
+      const zonePct = Math.max(0, Math.round((g.zone.radius / g.zone.originalRadius) * 100));
+      commit(`
+        <div class="screen" style="position:relative">
+          ${nav("Hide & Seek", "HIDER", g.id, "lobby")}
+          ${h.isOob ? `<div class="oob"><span>Out of Bounds - Return Now</span></div>` : ""}
+          <div class="map-pane"><div class="map" data-map="hider"></div></div>
+          <div class="panel">
+            <div class="proximity">
+              <div class="prox-label">proximity to nearest seeker</div>
+              <div class="prox-value ${h.proximity.toLowerCase()}">${h.proximity}</div>
+            </div>
+            ${inRange && !state.claimOpen ? `<button class="claim-tap" data-action="openClaim"><div class="kicker">you are in range</div><strong>Tap to claim objective</strong></button>` : ""}
+            ${!inRange ? objectiveHtml(h.objective, dist) : ""}
+            <div class="timer row">
+              <div style="flex:1">
+                <div class="kicker">zone shrinks in</div>
+                <div class="bar"><div class="fill" style="width:${Math.max(0, g.shrinkCountdown / state.config.shrinkIntervalSeconds * 100)}%"></div></div>
+              </div>
+              <div class="time">${timer}</div>
+            </div>
+            <div class="health row">
+              <div class="kicker">zone</div>
+              <div class="bar"><div class="fill" style="width:${zonePct}%"></div></div>
+              <div class="mono" style="color:var(--secondary)">${Math.round(g.zone.radius)}m</div>
+            </div>
+            <div class="lockdown">lockdown active / ${state.config.lockdownRadius}m radius</div>
+          </div>
+          ${state.claimOpen ? claimSheet(dist, inRange) : ""}
+        </div>`);
+    }
+
+    function renderSeeker() {
+      const g = state.game || (state.game = makeGame());
+      const me = g.seekers.find(s => s.me) || g.seekers[0];
+      const zonePct = Math.max(0, Math.round((g.zone.radius / g.zone.originalRadius) * 100));
+      commit(`
+        <div class="screen">
+          ${nav("Hide & Seek", "SEEKER", g.id, "lobby")}
+          <div class="map-pane"><div class="map" data-map="seeker"></div></div>
+          <div class="panel">
+            <div class="kicker">hider signals</div>
+            <div class="ping-list">
+              <div class="ping">
+                <span class="ping-led"></span>
+                <div style="flex:1;min-width:0">
+                  <div class="player-name">${g.hider.name}</div>
+                  <div class="mono">last ping / ${state.config.locationDelayMinutes} min delay</div>
+                </div>
+                <div class="mono" style="color:var(--secondary);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${g.hider.objective.name}</div>
+              </div>
+            </div>
+            <div class="timer row"><div style="flex:1"><div class="kicker">zone shrinks in</div><div class="bar"><div class="fill" style="width:${g.shrinkCountdown / state.config.shrinkIntervalSeconds * 100}%"></div></div></div><div class="time">${formatTime(g.shrinkCountdown)}</div></div>
+            <div class="health row"><div class="kicker">zone</div><div class="bar"><div class="fill" style="width:${zonePct}%"></div></div><div class="mono" style="color:var(--secondary)">${Math.round(g.zone.radius)}m</div></div>
+            <div class="objective row"><span class="kicker">pos</span><span class="mono" style="color:var(--primary)">${me.coords.lat.toFixed(4)}, ${me.coords.lng.toFixed(4)}</span></div>
+          </div>
+        </div>`);
+    }
+
+    function objectiveHtml(obj, dist) {
+      return `
+        <div class="objective">
+          <div class="row"><span class="kicker">active objective</span><span class="mono" style="color:var(--secondary)">${Math.round(dist)}m</span></div>
+          <div class="obj-name">${obj.name}</div>
+        </div>`;
+    }
+
+    function claimSheet(dist, inRange) {
+      const photo = !!state.photoUrl;
+      return `
+        <div class="claim-sheet">
+          <div class="sheet-head">
+            <div>
+              <div class="sheet-title">Claim Objective</div>
+              <div class="mono">${state.game.hider.objective.name}</div>
+            </div>
+            <button class="close" data-action="closeClaim">x</button>
+          </div>
+          <div class="checks">
+            <div class="check ${inRange ? "ok" : ""}">
+              <span class="check-dot"></span>
+              <div><div class="kicker">GPS Location</div><div class="mono">${inRange ? "IN RANGE" : Math.round(dist) + "m away"}</div></div>
+            </div>
+            <div class="check ${photo ? "ok" : ""}">
+              <span class="check-dot"></span>
+              <div><div class="kicker">Photo Proof</div><div class="mono">${photo ? "CAPTURED" : "REQUIRED"}</div></div>
+            </div>
+          </div>
+          <img class="photo-preview ${photo ? "show" : ""}" src="${photo ? state.photoUrl : ""}" alt="proof preview">
+          <button class="btn" data-action="takePhoto">${photo ? "Retake Photo" : "Photograph Objective"}</button>
+          <input id="photoInput" type="file" accept="image/*" capture="environment" style="display:none">
+          <button class="btn primary" data-action="confirmClaim" ${inRange && photo ? "" : "disabled"}>Confirm Claim</button>
+        </div>`;
+    }
+
+    function renderGameOver() {
+      const g = state.game || makeGame();
+      const color = state.winner === "SEEKERS" ? "var(--danger)" : "var(--secondary)";
+      const duration = Math.max(0, Math.floor((Date.now() - g.startTime) / 60000));
+      const zonePct = Math.round((g.zone.radius / g.zone.originalRadius) * 100);
+      commit(`
+        <div class="gameover">
+          <div class="kicker">mission terminated</div>
+          <div class="winner" style="color:${color};text-shadow:0 0 40px ${color}88">${state.winner}<br>WIN</div>
+          <div class="mono">${state.winner === "SEEKERS" ? "target located and tagged" : "objectives cleared / extraction complete"}</div>
+          <div class="stats" style="width:min(100%,300px)">
+            <div class="stat"><div class="stat-val">${duration}m</div><div class="stat-label">duration</div></div>
+            <div class="stat"><div class="stat-val">${g.objectivesCleared}</div><div class="stat-label">objectives</div></div>
+            <div class="stat"><div class="stat-val">${zonePct}%</div><div class="stat-label">zone</div></div>
+          </div>
+          <button class="btn primary" style="max-width:300px" data-action="restart">New Mission</button>
+        </div>`);
+    }
+
+    function drawMaps() {
+      document.querySelectorAll("[data-map]").forEach(el => drawMap(el, el.dataset.map));
+    }
+
+    function drawMap(el, mode) {
+      const g = state.game || makeGame();
+      const zone = mode === "preview"
+        ? { ...state.zoneSetup, originalRadius: state.zoneSetup.radius }
+        : g.zone;
+      const base = Math.max(zone.radius * 1.45, 800);
+      el.classList.add("map");
+      el.innerHTML = "";
+      const zoneSize = Math.min(92, Math.max(24, zone.radius / base * 100));
+      el.appendChild(circle("zone", 50, 50, zoneSize));
+      if (mode === "preview") return;
+      const h = g.hider;
+      const lock = pct(h.lockdown, zone, base);
+      el.appendChild(circle("lock-zone", lock.x, lock.y, h.lockdown.radius / base * 100));
+      const obj = pct(h.objective, zone, base);
+      marker(el, "objective", obj.x, obj.y, h.objective.name);
+      if (mode === "hider" || mode === "admin") {
+        const hp = pct(h.coords, zone, base);
+        marker(el, "hider", hp.x, hp.y, h.name);
+      }
+      if (mode === "seeker" || mode === "admin") {
+        const ping = pct(h.delayed, zone, base);
+        marker(el, "ping", ping.x, ping.y, state.config.locationDelayMinutes + "m ago");
+        g.seekers.forEach(s => {
+          const sp = pct(s.coords, zone, base);
+          marker(el, "seeker" + (s.me ? " me" : ""), sp.x, sp.y, s.name);
+        });
+      }
+    }
+
+    function pct(point, zone, base) {
+      const dy = (point.lat - zone.lat) * 111320;
+      const dx = (point.lng - zone.lng) * 111320 * Math.cos(zone.lat * Math.PI / 180);
+      return {
+        x: Math.max(3, Math.min(97, 50 + dx / base * 50)),
+        y: Math.max(3, Math.min(97, 50 - dy / base * 50))
+      };
+    }
+
+    function circle(cls, x, y, size) {
+      const d = document.createElement("div");
+      d.className = cls;
+      d.style.left = x + "%";
+      d.style.top = y + "%";
+      d.style.width = size + "%";
+      d.style.height = size + "%";
+      return d;
+    }
+
+    function marker(parent, cls, x, y, label) {
+      const m = document.createElement("div");
+      m.className = "marker " + cls;
+      m.style.left = x + "%";
+      m.style.top = y + "%";
+      parent.appendChild(m);
+      const l = document.createElement("div");
+      l.className = "mlabel";
+      l.style.left = x + "%";
+      l.style.top = y + "%";
+      l.textContent = label;
+      parent.appendChild(l);
+    }
+
+    function tick() {
+      if (!state.game || state.game.phase !== "active" || state.paused) return;
+      const g = state.game;
+      const h = g.hider;
+      h.coords = clampToZone(moveToward(h.coords, h.objective, .00008), g.zone);
+      g.seekers = g.seekers.map((s, i) => {
+        const speed = i === 0 ? .000055 : .000038;
+        return { ...s, coords: moveToward(s.coords, h.coords, speed) };
+      });
+      const minDist = Math.min(...g.seekers.map(s => meters(s.coords, h.coords)));
+      h.proximity = minDist < state.config.near ? "Near" : minDist < state.config.far ? "Far" : "Distant";
+      h.isOob = meters(h.coords, g.zone) > g.zone.radius;
+      if (h.isOob) g.oobCount += 1;
+      if (minDist < 25) {
+        state.winner = "SEEKERS";
+        g.phase = "ended";
+        state.screen = "gameover";
+        return render();
+      }
+      g.shrinkCountdown -= 1;
+      if (g.shrinkCountdown <= 0) {
+        g.zone.radius = Math.max(80, g.zone.radius * (1 - state.config.globalSqueezePercentage / 100));
+        g.shrinkCountdown = state.config.shrinkIntervalSeconds;
+      }
+      g.pingCount += 1;
+      if (g.pingCount % state.config.lockdownIntervalCount === 0) {
+        h.lockdown = { lat: h.coords.lat, lng: h.coords.lng, radius: state.config.lockdownRadius };
+      }
+      h.delayed = {
+        lat: h.coords.lat + (Math.random() - .5) * .0014,
+        lng: h.coords.lng + (Math.random() - .5) * .0014
+      };
+      if (state.screen === "hider" || state.screen === "seeker" || state.screen === "admin" || state.screen === "admin-live") render();
+    }
+
+    function wireCommon() {
+      document.querySelectorAll("[data-join]").forEach(btn => btn.addEventListener("click", () => join(btn.dataset.join)));
+      document.querySelectorAll("[data-action]").forEach(btn => btn.addEventListener("click", () => handle(btn.dataset.action)));
+      document.querySelectorAll("[data-config]").forEach(input => input.addEventListener("input", e => {
+        state.config[e.target.dataset.config] = Number(e.target.value);
+        render();
+      }));
+      document.querySelectorAll("[data-zone]").forEach(input => input.addEventListener("input", e => {
+        state.zoneSetup[e.target.dataset.zone] = Number(e.target.value);
+        state.game = makeGame();
+        render();
+      }));
+      const file = document.getElementById("photoInput");
+      if (file) {
+        file.addEventListener("change", e => {
+          const f = e.target.files && e.target.files[0];
+          if (f) state.photoUrl = URL.createObjectURL(f);
+          render();
+        });
+      }
+    }
+
+    function handle(action) {
+      if (action === "lobby") { state.screen = "lobby"; state.claimOpen = false; return render(); }
+      if (action === "adminTap") return;
+      if (action === "startGame") {
+        state.game = makeGame();
+        state.screen = "admin";
+        state.game.phase = "active";
+        state.screen = "admin-live";
+        return renderAdmin();
+      }
+      if (action === "pause") { state.paused = true; return renderAdmin(); }
+      if (action === "resume") { state.paused = false; return renderAdmin(); }
+      if (action === "end") { state.winner = "SEEKERS"; state.screen = "gameover"; return render(); }
+      if (action === "restart") {
+        state.game = makeGame();
+        state.screen = "lobby";
+        state.role = null;
+        state.photoUrl = null;
+        state.claimOpen = false;
+        return render();
+      }
+      if (action === "myLocation") {
+        if (!navigator.geolocation) return;
+        navigator.geolocation.getCurrentPosition(pos => {
+          state.zoneSetup.lat = Number(pos.coords.latitude.toFixed(5));
+          state.zoneSetup.lng = Number(pos.coords.longitude.toFixed(5));
+          state.game = makeGame();
+          render();
+        });
+      }
+      if (action === "openClaim") { state.claimOpen = true; return render(); }
+      if (action === "closeClaim") { state.claimOpen = false; return render(); }
+      if (action === "takePhoto") {
+        const input = document.getElementById("photoInput");
+        if (input) input.click();
+      }
+      if (action === "confirmClaim") {
+        const g = state.game;
+        const dist = meters(g.hider.coords, g.hider.objective);
+        if (dist < 40 && state.photoUrl) {
+          g.objectivesCleared += 1;
+          g.objIndex += 1;
+          g.hider.objective = LANDMARKS[g.objIndex % LANDMARKS.length];
+          state.photoUrl = null;
+          state.claimOpen = false;
+          if (g.objectivesCleared >= 5) {
+            state.winner = "HIDERS";
+            state.screen = "gameover";
+          }
+          render();
+        }
+      }
+    }
+
+    function formatTime(sec) {
+      const s = Math.max(0, Math.floor(sec));
+      return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    render();
+    timer = setInterval(tick, 1000);
+  </script>
+</body>
+</html>

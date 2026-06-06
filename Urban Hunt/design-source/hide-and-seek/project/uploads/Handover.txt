@@ -1,0 +1,155 @@
+This handover document is formatted specifically for an autonomous coding agent (like Claude Code, Antigravity, or Codex). It outlines the architecture, mathematical formulas, state requirements, and edge-case handling needed to build the game engine from scratch.
+
+---
+
+# 📄 Product Specification & Handover Document: Project "Urban Hunt"
+
+## 1. Project Overview & Objective
+
+An urban geospatial deduction and hide-and-seek web application. The game engine coordinates a real-time tactical hunt across a city between two main roles (**Seekers** and **Hiders**), moderated by an **Admin Panel**. The system uses imperfect data tracking, dynamic spatial boundaries, and procedurally validated real-world objectives to create a balanced, high-tension urban gameplay loop.
+
+---
+
+## 2. System Architecture & Tech Stack
+
+The implementation must strictly utilize the following stack to optimize for low-latency state updates and minimal mobile battery consumption:
+
+* **Frontend:** Vite + TypeScript + React/Vue, styled with TailwindCSS.
+* **Map Rendering:** MapLibre GL (or Leaflet) utilizing WebGL for rendering vector polygons and trails.
+* **Backend:** Node.js (TypeScript) with Express or Fastify.
+* **Geospatial Logic Engine:** Turf.js (all distance, boundary containment, and scaling operations must run on the server using Turf).
+* **State Management & Real-Time Data:** Redis for volatile, ephemeral live states (player coordinates, active timers).
+* **Persistence:** PostgreSQL with PostGIS extension (for preloaded landmark databases and match histories).
+* **Ingress Data:** Overpass API (OpenStreetMap) for dynamic, local Point of Interest (POI) extraction.
+
+---
+
+## 3. Core Game Mechanics & Algorithmic Logic
+
+### A. The Global Squeeze Zone (Absolute Law)
+
+* The map contains a global bounding polygon representing the active safe area.
+* At an admin-defined interval, the area of this polygon shrinks by an adjustable percentage ($X\%$).
+* **Centering Rule:** The polygon does not shrink toward its geometric center. It scales down with the **live geometric midpoint of all active Seekers** as the transformation origin.
+* *Implementation:* On each tick, extract all live Seeker coordinates, compute the center using `turf.center()`, and scale the zone using `turf.transformScale()`.
+
+### B. The Hider Lockdown Zone (Localized Boundary)
+
+* On every $N$-th Seeker ping (default: every 3rd ping), the Hider is placed in a geographic lockdown.
+* A static 500-meter (adjustable) circular polygon is drawn around the Hider's exact location at the moment of that specific ping.
+* The Hider is prohibited from exiting this static circle until the lockdown period clears (on the next boundary interval).
+* **Boundary Intersection:** If the Global Squeeze cuts through this 500m circle, the Hider's legal boundary is modified to be the **Intersection** (`turf.intersect()`) of the two shapes. The Global Squeeze always takes priority; the Hider can never enter global out-of-bounds territory.
+
+### C. The Intel Merchant (Objective Engine)
+
+* Hiders complete real-world objectives by physically traveling to public landmarks preloaded via the Overpass API (libraries, museums, schools, transit stations).
+* Objectives spawn sequentially: clearing an objective instantly triggers the next one.
+* **Boundary Validation Loop:** Before assigning an objective, the engine must verify its coordinates lie inside *both* the Hider's localized lockdown circle AND the current global safe zone.
+* **Auto-Cycle Trigger:** If the shrinking Global Squeeze causes an active objective to fall into out-of-bounds territory, the server must silently deprecate it and push a new valid objective to the Hider.
+
+### D. Hider Proximity Radar
+
+* To maintain tension without leaking exact tracking data, the Hider receives a live string state representing their distance to the **closest active Seeker**:
+* **Near:** Distance is less than 200m (adjustable).
+* **Far:** Distance is between 200m and 1000m (adjustable).
+* **Distant:** Distance is greater than 1000m (adjustable).
+
+
+* *Implementation:* On every client location update, calculate distances from the Hider to all Seekers via `turf.distance()`, sort ascending, select index 0, and evaluate against the threshold mapping.
+
+### E. GPS Drift & Leniency
+
+* Implement a hard-coded 20-meter buffer line outside of all legal boundaries (`turf.polygonToLine()`).
+* A player's location is only flags as "Out of Bounds" if they remain outside the legal zone + 20m buffer for more than 3 consecutive tracking samples.
+* To clear an Out of Bounds penalty state, the player's coordinate must return completely inside the *true* boundary line (not the buffer zone).
+
+---
+
+## 4. UI/UX & Data Visibility Matrix
+
+Data leakage between roles must be restricted via backend socket event scoping. Follow this data distribution layout:
+
+| UI Map Layer / Element | Seeker Panel View | Hider Panel View | Admin Panel View |
+| --- | --- | --- | --- |
+| **Global Safe Zone Poly** | Live / Real-time | Live / Real-time | Live / Real-time |
+| **Hider Location** | **Delayed** by $X$ minutes | Live / Real-time | Live / Real-time |
+| **Seeker Locations** | Live / Real-time | **Hidden** (Represented by Status only) | Live / Real-time |
+| **Hider Lockdown Circles** | Live / Real-time | Own Circle Only | All Circles |
+| **Hider Active Objectives** | Live / Real-time (Notified on clear) | Own Objective Only | All Active Objectives |
+| **Radar Status String** | Hidden | Live / Real-time | Hidden |
+
+---
+
+## 5. Socket.io Event Schema & Payloads
+
+The system must run on an event-driven architecture using WebSockets. Implement the following core communication interfaces:
+
+### `Hider -> Server: location_update`
+
+```typescript
+interface HiderLocationPayload {
+  gameId: string;
+  playerId: string;
+  coordinates: [number, number]; // [lon, lat]
+  timestamp: string;
+}
+
+```
+
+### `Server -> Seeker: ping_broadcast` (Throttled & Delayed)
+
+```typescript
+interface SeekerPingPayload {
+  hiders: Array<{
+    hiderId: string;
+    delayedCoordinates: [number, number];
+    timestampOfCapture: string; // The X-minutes ago timestamp
+    lockdownCircleGeoJSON: object | null;
+    activeObjective: {
+      name: string;
+      coordinates: [number, number];
+    };
+  }>;
+}
+
+```
+
+### `Server -> Hider: status_update` (High Frequency)
+
+```typescript
+interface HiderStatusPayload {
+  proximityStatus: 'Near' | 'Far' | 'Distant';
+  globalSafeZoneGeoJSON: object;
+  myLockdownCircleGeoJSON: object | null;
+  activeObjective: {
+    name: string;
+    coordinates: [number, number];
+  };
+  isOutOfBounds: boolean;
+}
+
+```
+
+### `Admin -> Server: update_variables`
+
+```typescript
+interface AdminConfigPayload {
+  gameId: string;
+  pingIntervalMinutes: number;      // Adjusts Seeker update rate
+  locationDelayMinutes: number;     // Adjusts data lag time
+  lockdownIntervalCount: number;    // Adjusts which ping triggers a lockdown
+  globalSqueezePercentage: number;  // Adjusts area scaling step size
+  proximityThresholds: {
+    near: number;                   // Meters for 'Near'
+    far: number;                    // Meters for 'Far'
+  }
+}
+
+```
+
+---
+
+## 6. Initial Setup & Seed Requirements
+
+1. **Overpass Ingestion Script:** Build an asynchronous CLI seeding script that queries the OpenStreetMap Overpass engine for a target city bounding box. It must fetch nodes matching `amenity=library`, `tourism=museum`, `amenity=townhall`, and `railway=station`, sanitize the names and positions, and store them into the database pool.
+2. **Game State Ticker:** Use Redis hashes to handle active games. The core background timer matrix should run via robust Javascript `setInterval` closures or `Agenda` instances, allowing real-time modification of interval speeds when receiving signals from the Admin control socket without dropping active game loops.

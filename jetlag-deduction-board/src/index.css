@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; margin: 0; }
+.leaflet-container { background: #0f172a; font-family: inherit; }
+/* keep leaflet controls visible on the dark theme */
+.leaflet-control-attribution { background: rgba(15,23,42,.7) !important; color: #94a3b8 !important; }
+.leaflet-control-attribution a { color: #38bdf8 !important; }
+
+/* Mobile backstop: on small screens the map's flex parent can collapse to zero
+   height (Leaflet then renders nothing). Force the map's <main> to a real
+   height using dynamic viewport units that account for mobile browser toolbars.
+   The header is ~41px; subtract it so the map fills the rest exactly. */
+@media (max-width: 767px) {
+  main { height: calc(100dvh - 41px); min-height: calc(100dvh - 41px); }
+}

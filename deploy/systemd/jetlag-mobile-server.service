@@ -1,0 +1,16 @@
+[Unit]
+Description=Jetlag Mobile sync and push server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/minigame-library/Jetlag Mobile App/server
+ExecStart=/usr/bin/node server.js
+Environment=NODE_ENV=production
+Environment=PORT=8080
+Restart=always
+RestartSec=5
+User=www-data
+
+[Install]
+WantedBy=multi-user.target

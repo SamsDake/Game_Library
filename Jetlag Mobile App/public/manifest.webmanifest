@@ -1,0 +1,12 @@
+{
+  "name": "Jet Lag — Hide & Seek",
+  "short_name": "Jet Lag",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#100c0a",
+  "theme_color": "#100c0a",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

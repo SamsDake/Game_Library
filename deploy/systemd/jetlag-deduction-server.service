@@ -1,0 +1,16 @@
+[Unit]
+Description=Jetlag Deduction Board sync server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/minigame-library/jetlag-deduction-board/server
+ExecStart=/usr/bin/node server.js
+Environment=NODE_ENV=production
+Environment=PORT=3001
+Restart=always
+RestartSec=5
+User=www-data
+
+[Install]
+WantedBy=multi-user.target

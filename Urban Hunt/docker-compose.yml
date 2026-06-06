@@ -1,0 +1,23 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+  postgis:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: urban_hunt
+      POSTGRES_USER: urban_hunt
+      POSTGRES_PASSWORD: urban_hunt
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgis-data:/var/lib/postgresql/data
+
+volumes:
+  redis-data:
+  postgis-data:

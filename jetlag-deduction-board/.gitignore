@@ -1,0 +1,9 @@
+node_modules
+dist
+.DS_Store
+
+# Resumable-download scratch for the preload script. The browser never loads
+# these per-country intermediates (only the merged public/preload/*.json files
+# are served), so they should not be deployed/committed. Kept locally so a
+# re-run of `npm run preload` can resume instead of re-downloading.
+public/preload/parts/

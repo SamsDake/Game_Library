@@ -1,0 +1,15 @@
+{
+  "name": "Urban Hunt — Hide & Seek",
+  "short_name": "Urban Hunt",
+  "description": "Tactical urban hide & seek field operations console.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070b07",
+  "theme_color": "#070b07",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

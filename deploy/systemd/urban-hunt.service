@@ -1,0 +1,20 @@
+[Unit]
+Description=Urban Hunt game server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/minigame-library/Urban Hunt
+ExecStart=/usr/bin/npm run start
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=ADMIN_PIN=change-me
+# Optional production services:
+# Environment=REDIS_URL=redis://127.0.0.1:6379
+# Environment=DATABASE_URL=postgres://urban_hunt:urban_hunt@127.0.0.1:5432/urban_hunt
+Restart=always
+RestartSec=5
+User=www-data
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Jet Lag sync + Web Push server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/jetlag/server
+ExecStart=/usr/bin/node server.js
+Environment=PORT=8080
+Restart=always
+User=www-data
+
+[Install]
+WantedBy=multi-user.target
