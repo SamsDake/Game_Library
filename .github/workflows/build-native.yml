@@ -61,6 +61,33 @@ jobs:
           npm ci
           VITE_API_BASE_URL=https://comicsams.cloud/urban-hunt npm run build
 
+      - name: Patch background-geolocation for Capacitor 8
+        working-directory: Urban Hunt
+        run: |
+          python3 -c "
+          import re, sys
+          path = 'node_modules/@capacitor-community/background-geolocation/Package.swift'
+          with open(path) as f:
+              content = f.read()
+          # The plugin locks capacitor-swift-pm to 7.x — widen to allow 8.x
+          fixed = re.sub(
+              r'\"7\.0\.0\"\.\.<\"8\.0\.0\"',
+              'from: \"7.0.0\"',
+              content
+          )
+          fixed = re.sub(
+              r'\.upToNextMajor\(from: \"7\.0\.0\"\)',
+              'from: \"7.0.0\"',
+              fixed
+          )
+          if fixed == content:
+              print('WARNING: no version constraint found to patch', file=sys.stderr)
+          else:
+              print('Patched capacitor-swift-pm version constraint')
+          with open(path, 'w') as f:
+              f.write(fixed)
+          "
+
       - name: Sync Capacitor to iOS
         working-directory: Urban Hunt
         run: npx cap sync ios
