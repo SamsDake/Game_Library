@@ -82,6 +82,23 @@ jobs:
         working-directory: Urban Hunt
         run: npx cap sync ios
 
+      - name: Remove Android-only background GPS package from iOS
+        working-directory: Urban Hunt
+        run: |
+          python3 -c "
+          path = 'ios/App/CapApp-SPM/Package.swift'
+          with open(path) as f:
+              lines = f.readlines()
+          lines = [
+              line for line in lines
+              if 'CapacitorCommunityBackgroundGeolocation' not in line
+              and '@capacitor-community/background-geolocation' not in line
+          ]
+          with open(path, 'w') as f:
+              f.writelines(lines)
+          print('Removed Android-only background geolocation package from iOS SwiftPM manifest')
+          "
+
       - name: Ensure location permissions in Info.plist
         working-directory: Urban Hunt
         run: |
