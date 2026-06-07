@@ -61,60 +61,72 @@ jobs:
           npm ci
           VITE_API_BASE_URL=https://comicsams.cloud/urban-hunt npm run build
 
-      - name: Patch background-geolocation for Capacitor 8
-        working-directory: Urban Hunt
-        run: |
-          python3 -c "
-          import re, sys
-          path = 'node_modules/@capacitor-community/background-geolocation/Package.swift'
-          with open(path) as f:
-              content = f.read()
-          print('Before patch:', re.findall(r'capacitor-swift-pm.*', content))
-          # Widen the version range to include Capacitor 8.x
-          # Note: 'from: X' == '.upToNextMajor(from: X)' — both mean X..<(X+1), so we must use a range
-          fixed = re.sub(
-              r'\.upToNextMajor\(from: \"7\.0\.0\"\)',
-              '\"7.0.0\"..<\"9.0.0\"',
-              content
-          )
-          fixed = re.sub(
-              r'\"7\.0\.0\"\.\.<\"8\.0\.0\"',
-              '\"7.0.0\"..<\"9.0.0\"',
-              fixed
-          )
-          if fixed == content:
-              print('WARNING: no pattern matched — printing file for inspection:', file=sys.stderr)
-              print(content, file=sys.stderr)
-          else:
-              print('Patched: capacitor-swift-pm now allows 7.x and 8.x')
-          with open(path, 'w') as f:
-              f.write(fixed)
-          "
-
       - name: Sync Capacitor to iOS
         working-directory: Urban Hunt
         run: npx cap sync ios
 
-      - name: Fix Package.swift paths (Windows backslashes → forward slashes)
+      - name: Inline background-geolocation into CapApp-SPM (bypass Capacitor 7 SPM conflict)
         working-directory: Urban Hunt
         run: |
-          python3 -c "
-          path = 'ios/App/CapApp-SPM/Package.swift'
-          with open(path) as f:
+          python3 << 'PYEOF'
+          import os, shutil, re, sys
+
+          bg_src = "node_modules/@capacitor-community/background-geolocation/ios/Plugin"
+          spm_sources = "ios/App/CapApp-SPM/Sources/CapApp-SPM"
+          pkg_path = "ios/App/CapApp-SPM/Package.swift"
+
+          # Copy Swift source files from the plugin into CapApp-SPM sources
+          if os.path.isdir(bg_src):
+              copied = []
+              for fname in os.listdir(bg_src):
+                  if fname.endswith(".swift"):
+                      shutil.copy2(os.path.join(bg_src, fname), os.path.join(spm_sources, fname))
+                      copied.append(fname)
+              print(f"Copied Swift sources: {copied}")
+          else:
+              print(f"ERROR: {bg_src} not found — listing node_modules:", file=sys.stderr)
+              for p in os.listdir("node_modules/@capacitor-community"):
+                  print(f"  {p}", file=sys.stderr)
+              sys.exit(1)
+
+          # Patch CapApp-SPM/Package.swift:
+          #   1. Fix Windows backslash paths
+          #   2. Remove the background-geolocation package dependency (Swift files are now inline)
+          with open(pkg_path) as f:
               content = f.read()
-          fixed = content.replace('\\\\', '/')
-          with open(path, 'w') as f:
-              f.write(fixed)
-          print('Fixed Package.swift')
-          "
+
+          print("--- Package.swift before patch ---")
+          print(content)
+          print("---")
+
+          # Fix Windows paths
+          content = content.replace("\\", "/")
+
+          # Remove the background-geolocation .package(...) entry
+          content = re.sub(
+              r",?\s*\.package\(\s*name:\s*\"CapacitorCommunityBackgroundGeolocation\"[^)]*\)",
+              "",
+              content,
+          )
+
+          # Remove the .product(...) dependency in the target
+          content = re.sub(
+              r",?\s*\.product\(\s*name:\s*\"CapacitorCommunityBackgroundGeolocation\"[^)]*\)",
+              "",
+              content,
+          )
+
+          with open(pkg_path, "w") as f:
+              f.write(content)
+
+          print("--- Package.swift after patch ---")
+          print(content)
+          print("---")
+          PYEOF
 
       - name: List Xcode targets and schemes
         working-directory: Urban Hunt
         run: xcodebuild -list -project ios/App/App.xcodeproj
-
-      - name: Show Package.swift after fix
-        working-directory: Urban Hunt
-        run: cat ios/App/CapApp-SPM/Package.swift
 
       - name: Build unsigned app
         working-directory: Urban Hunt
