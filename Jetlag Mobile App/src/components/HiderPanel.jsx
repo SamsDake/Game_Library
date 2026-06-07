@@ -333,12 +333,12 @@ export function HiderPanel({ role, state, actions, hideElapsed, maxHand, onAdmin
 
   const playOpen = () => {
     if (!openCard) return;
+    if (openCard.power === 'discardDraw') { setCardModal({ kind: 'discardDraw', uid: open }); setOpen(null); return; }
+    if (openCard.power === 'duplicate') { setCardModal({ kind: 'duplicate', uid: open }); setOpen(null); return; }
     if (cost.has) {
       if (cost.all && cost.pool.length === 0) { actions.playCard(open, []); setOpen(null); return; }
       setCardModal({ kind: 'cost', uid: open }); setOpen(null); return;
     }
-    if (openCard.power === 'discardDraw') { setCardModal({ kind: 'discardDraw', uid: open }); setOpen(null); return; }
-    if (openCard.power === 'duplicate') { setCardModal({ kind: 'duplicate', uid: open }); setOpen(null); return; }
     actions.playCard(open); setOpen(null);
   };
 
