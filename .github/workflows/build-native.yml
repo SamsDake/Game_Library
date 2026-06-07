@@ -65,15 +65,29 @@ jobs:
         working-directory: Urban Hunt
         run: npx cap sync ios
 
+      - name: Fix Package.swift paths (Windows backslashes → forward slashes)
+        working-directory: Urban Hunt
+        run: |
+          python3 -c "
+          path = 'ios/App/CapApp-SPM/Package.swift'
+          with open(path) as f:
+              content = f.read()
+          fixed = content.replace('\\\\', '/')
+          with open(path, 'w') as f:
+              f.write(fixed)
+          print('Fixed Package.swift')
+          "
+
       - name: Build unsigned app
         working-directory: Urban Hunt
         run: |
+          set -o pipefail
           xcodebuild \
             -project ios/App/App.xcodeproj \
-            -scheme App \
+            -target App \
             -configuration Release \
             -sdk iphoneos \
-            CONFIGURATION_BUILD_DIR="$(pwd)/build" \
+            SYMROOT="$(pwd)/build" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
@@ -83,7 +97,7 @@ jobs:
         working-directory: Urban Hunt
         run: |
           mkdir Payload
-          cp -r build/App.app Payload/
+          cp -r build/Release-iphoneos/App.app Payload/
           zip -r UrbanHunt.ipa Payload/
 
       - uses: actions/upload-artifact@v4
