@@ -1,0 +1,8 @@
+{
+  "appId": "com.jetlagmobileapp.app",
+  "appName": "Jetlag",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
