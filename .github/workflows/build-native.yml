@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -29,6 +32,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+
+      - name: Make gradlew executable
+        working-directory: Urban Hunt/android
+        run: chmod +x gradlew
 
       - name: Build debug APK
         working-directory: Urban Hunt/android
@@ -58,16 +65,15 @@ jobs:
         working-directory: Urban Hunt
         run: npx cap sync ios
 
-      - name: Build unsigned archive
+      - name: Build unsigned app
         working-directory: Urban Hunt
         run: |
           xcodebuild \
             -project ios/App/App.xcodeproj \
             -scheme App \
             -configuration Release \
-            -destination "generic/platform=iOS" \
-            -archivePath build/App.xcarchive \
-            archive \
+            -sdk iphoneos \
+            CONFIGURATION_BUILD_DIR="$(pwd)/build" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
@@ -77,8 +83,8 @@ jobs:
         working-directory: Urban Hunt
         run: |
           mkdir Payload
-          cp -r build/App.xcarchive/Products/Applications/App.app Payload/
-          cd Payload && zip -r ../UrbanHunt.ipa .
+          cp -r build/App.app Payload/
+          zip -r UrbanHunt.ipa Payload/
 
       - uses: actions/upload-artifact@v4
         with:
