@@ -7,12 +7,14 @@ let nativeToken: string | null = null;
 let nativeListenersReady = false;
 let nativeRegistering = false;
 let nativeIdentity: { socket: Socket; playerId: string; playerSecret: string } | null = null;
+const nativePushEnabled = import.meta.env.VITE_NATIVE_PUSH_ENABLED === "true";
 
 // Registers native push when running inside Capacitor, otherwise uses Web Push
 // for browser/PWA installs. Safe to call repeatedly on reconnect.
 export async function setupPush(socket: Socket, playerId: string, playerSecret: string): Promise<void> {
   if (typeof window === "undefined" || !playerId) return;
   if (Capacitor.isNativePlatform()) {
+    if (!nativePushEnabled) return;
     await setupNativePush(socket, playerId, playerSecret);
     return;
   }

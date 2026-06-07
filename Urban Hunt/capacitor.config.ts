@@ -7,6 +7,9 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: "https"
   },
+  android: {
+    useLegacyBridge: true
+  },
   plugins: {
     PushNotifications: {
       presentationOptions: ["badge", "sound", "banner", "list"]

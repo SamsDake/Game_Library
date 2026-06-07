@@ -16,6 +16,7 @@ let nativePushToken = null;
 let nativePushListenersReady = false;
 let nativePushRegistering = false;
 let nativePushTarget = null;
+const nativePushEnabled = import.meta.env.VITE_NATIVE_PUSH_ENABLED === 'true';
 
 function appAsset(path) {
   return `${APP_BASE}${path.replace(/^\/+/, '')}`;
@@ -196,6 +197,7 @@ export default function App() {
     async function subscribe() {
       try {
         if (Capacitor.isNativePlatform()) {
+          if (!nativePushEnabled) return;
           await setupNativePush(device, SERVER_URL);
           return;
         }
