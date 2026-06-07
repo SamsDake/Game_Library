@@ -198,6 +198,27 @@ jobs:
         working-directory: Urban Hunt
         run: npx cap sync ios
 
+      - name: Ensure location permissions in Info.plist
+        working-directory: Urban Hunt
+        run: |
+          python3 -c "
+          import plistlib
+          path = 'ios/App/App/Info.plist'
+          with open(path, 'rb') as f:
+              plist = plistlib.load(f)
+          plist.setdefault('NSLocationWhenInUseUsageDescription', 'Urban Hunt uses your location so seekers and hiders can play the active game.')
+          plist.setdefault('NSLocationAlwaysAndWhenInUseUsageDescription', 'Urban Hunt uses your location while the app is backgrounded or the device is locked during an active game.')
+          modes = plist.get('UIBackgroundModes', [])
+          if 'location' not in modes:
+              modes.append('location')
+          plist['UIBackgroundModes'] = modes
+          with open(path, 'wb') as f:
+              plistlib.dump(plist, f)
+          print('NSLocationWhenInUseUsageDescription:', plist.get('NSLocationWhenInUseUsageDescription'))
+          print('NSLocationAlwaysAndWhenInUseUsageDescription:', plist.get('NSLocationAlwaysAndWhenInUseUsageDescription'))
+          print('UIBackgroundModes:', plist.get('UIBackgroundModes'))
+          "
+
       - name: Inline background-geolocation into CapApp-SPM (bypass Capacitor 7 SPM conflict)
         working-directory: Urban Hunt
         run: |
