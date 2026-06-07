@@ -24,6 +24,17 @@ jobs:
           npm install
           VITE_API_BASE_URL=https://comicsams.cloud/urban-hunt npm run build
 
+      - name: Add Firebase Android config
+        working-directory: Urban Hunt
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.URBAN_HUNT_GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
+          else
+            echo "URBAN_HUNT_GOOGLE_SERVICES_JSON_BASE64 not set; Android native push will not work."
+          fi
+
       - name: Sync Capacitor to Android
         working-directory: Urban Hunt
         run: npx cap sync android
@@ -96,6 +107,7 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             SYMROOT="$(pwd)/build" \
+            CODE_SIGN_ENTITLEMENTS=App/App.entitlements \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
@@ -140,9 +152,22 @@ jobs:
 
       - name: Add and sync Android platform
         working-directory: Jetlag Mobile App
+        run: npx cap add android
+
+      - name: Add Firebase Android config
+        working-directory: Jetlag Mobile App
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.JETLAG_GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
-          npx cap add android
-          npx cap sync android
+          if [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
+          else
+            echo "JETLAG_GOOGLE_SERVICES_JSON_BASE64 not set; Android native push will not work."
+          fi
+
+      - name: Sync Capacitor to Android
+        working-directory: Jetlag Mobile App
+        run: npx cap sync android
 
       - name: Add location permissions to AndroidManifest
         working-directory: Jetlag Mobile App
@@ -151,9 +176,11 @@ jobs:
           path = 'android/app/src/main/AndroidManifest.xml'
           with open(path) as f:
               content = f.read()
-          perms = '    <uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\" />\n    <uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\" />\n'
+          perms = '    <uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\" />\n    <uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\" />\n    <uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />\n'
           if 'ACCESS_FINE_LOCATION' not in content:
               content = content.replace('<application', perms + '    <application', 1)
+          elif 'POST_NOTIFICATIONS' not in content:
+              content = content.replace('<application', '    <uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />\n    <application', 1)
           with open(path, 'w') as f:
               f.write(content)
           print('AndroidManifest updated')
@@ -219,6 +246,33 @@ jobs:
           print('NSLocationWhenInUseUsageDescription:', plist.get('NSLocationWhenInUseUsageDescription'))
           "
 
+      - name: Add APNs callbacks and entitlement
+        working-directory: Jetlag Mobile App
+        run: |
+          python3 -c "
+          import plistlib
+          app_delegate = 'ios/App/App/AppDelegate.swift'
+          with open(app_delegate) as f:
+              content = f.read()
+          callbacks = '''
+              func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+                  NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+              }
+
+              func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+                  NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+              }
+          '''
+          if 'capacitorDidRegisterForRemoteNotifications' not in content:
+              content = content.rstrip().removesuffix('}') + callbacks + '\n}\n'
+              with open(app_delegate, 'w') as f:
+                  f.write(content)
+          entitlements = {'aps-environment': 'development'}
+          with open('ios/App/App/App.entitlements', 'wb') as f:
+              plistlib.dump(entitlements, f)
+          print('APNs callbacks and App.entitlements added')
+          "
+
       - name: Build unsigned app
         working-directory: Jetlag Mobile App
         run: |
@@ -229,6 +283,7 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             SYMROOT="$(pwd)/build" \
+            CODE_SIGN_ENTITLEMENTS=App/App.entitlements \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \

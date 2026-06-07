@@ -3,8 +3,12 @@
 // Set PORT env var if needed (default 8080)
 const { WebSocketServer } = require('ws');
 const http = require('http');
+const http2 = require('http2');
 const fs = require('fs');
+const crypto = require('crypto');
 const webpush = require('web-push');
+const { applicationDefault, cert, getApps, initializeApp } = require('firebase-admin/app');
+const { getMessaging } = require('firebase-admin/messaging');
 
 const PORT = process.env.PORT || 8080;
 
@@ -21,6 +25,8 @@ if (fs.existsSync(VAPID_FILE)) {
 // Apple rejects VAPID tokens whose `sub` is a bogus contact (e.g. a `.local`
 // domain) with 403 BadJwtToken — must be a real mailto:/https: contact.
 webpush.setVapidDetails('mailto:admin@comicsams.cloud', vapidKeys.publicKey, vapidKeys.privateKey);
+let fcm = null;
+let apns = null;
 
 // ── State ─────────────────────────────────────────────────────────
 let gameState = null;
@@ -32,26 +38,177 @@ const SUBS_FILE = './push-subs.json';
 const pushSubs = fs.existsSync(SUBS_FILE) // { 'A': PushSubscription, 'B': PushSubscription }
   ? JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8'))
   : {};
+const NATIVE_SUBS_FILE = './native-push-tokens.json';
+const nativePushTokens = fs.existsSync(NATIVE_SUBS_FILE) // { 'A': { token, platform }, 'B': { token, platform } }
+  ? JSON.parse(fs.readFileSync(NATIVE_SUBS_FILE, 'utf8'))
+  : {};
 
 function saveSubs() {
   try { fs.writeFileSync(SUBS_FILE, JSON.stringify(pushSubs)); } catch { /* best-effort persistence */ }
+  try { fs.writeFileSync(NATIVE_SUBS_FILE, JSON.stringify(nativePushTokens)); } catch { /* best-effort persistence */ }
 }
 
 // ── Push helper ───────────────────────────────────────────────────
 function sendPush(device, title, body) {
   const sub = pushSubs[device];
-  if (!sub) { console.log(`[push] no subscription for device ${device}`); return; }
-  webpush.sendNotification(sub, JSON.stringify({ title, body }))
-    .then(() => console.log(`[push] sent to ${device}: ${title}`))
-    .catch((err) => {
-      const code = err.statusCode;
-      console.log(`[push] FAILED to ${device} (status ${code}): ${err.body || err.message}`);
-      if (code === 404 || code === 410) { // subscription gone for good
-        delete pushSubs[device];
-        saveSubs();
-      }
-    });
+  const native = nativePushTokens[device];
+  if (!sub && !native) { console.log(`[push] no subscription for device ${device}`); return; }
+  if (sub) {
+    webpush.sendNotification(sub, JSON.stringify({ title, body }))
+      .then(() => console.log(`[push] web sent to ${device}: ${title}`))
+      .catch((err) => {
+        const code = err.statusCode;
+        console.log(`[push] web FAILED to ${device} (status ${code}): ${err.body || err.message}`);
+        if (code === 404 || code === 410) {
+          delete pushSubs[device];
+          saveSubs();
+        }
+      });
+  }
+  if (native) sendNativePush(device, native, title, body);
 }
+
+function sendNativePush(device, native, title, body) {
+  if (native.platform === 'android') {
+    if (!fcm) return;
+    fcm.send({
+      token: native.token,
+      notification: { title, body },
+      android: {
+        priority: 'high',
+        notification: { channelId: 'game' },
+      },
+    }).then(() => console.log(`[push] native sent to ${device}: ${title}`))
+      .catch((err) => {
+        console.log(`[push] native FAILED to ${device}: ${err.code || err.message}`);
+        if (err.code === 'messaging/registration-token-not-registered') {
+          delete nativePushTokens[device];
+          saveSubs();
+        }
+      });
+    return;
+  }
+  if (native.platform === 'ios' && apns) {
+    apns.send(native.token, title, body)
+      .then(() => console.log(`[push] native sent to ${device}: ${title}`))
+      .catch((err) => {
+        console.log(`[push] APNs FAILED to ${device} (status ${err.statusCode || 'n/a'}): ${err.message}`);
+        if (err.statusCode === 400 || err.statusCode === 410) {
+          delete nativePushTokens[device];
+          saveSubs();
+        }
+      });
+  }
+}
+
+function initFirebase() {
+  try {
+    if (!getApps().length) {
+      const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+        || (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64
+          ? Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8')
+          : '');
+      initializeApp(json
+        ? { credential: cert(JSON.parse(json)) }
+        : { credential: applicationDefault() });
+    }
+    return getMessaging();
+  } catch (err) {
+    console.log(`[push] Firebase native push disabled: ${err.message}`);
+    return null;
+  }
+}
+
+function initApns() {
+  const keyId = process.env.APNS_KEY_ID;
+  const teamId = process.env.APNS_TEAM_ID;
+  const bundleId = process.env.APNS_BUNDLE_ID || 'com.jetlagmobileapp.app';
+  const rawKey = process.env.APNS_PRIVATE_KEY
+    || (process.env.APNS_PRIVATE_KEY_BASE64
+      ? Buffer.from(process.env.APNS_PRIVATE_KEY_BASE64, 'base64').toString('utf8')
+      : '');
+  if (!keyId || !teamId || !rawKey) {
+    console.log('[push] APNs native push disabled: APNS_KEY_ID, APNS_TEAM_ID, and APNS_PRIVATE_KEY are required');
+    return null;
+  }
+  return new ApnsSender({
+    keyId,
+    teamId,
+    bundleId,
+    privateKey: rawKey.replace(/\\n/g, '\n'),
+    production: String(process.env.APNS_ENV || '').toLowerCase() === 'production',
+  });
+}
+
+class ApnsSender {
+  constructor(config) {
+    this.config = config;
+    this.jwt = '';
+    this.jwtCreatedAt = 0;
+    this.host = config.production ? 'api.push.apple.com' : 'api.sandbox.push.apple.com';
+  }
+
+  send(deviceToken, title, body) {
+    return new Promise((resolve, reject) => {
+      const client = http2.connect(`https://${this.host}`);
+      const req = client.request({
+        ':method': 'POST',
+        ':path': `/3/device/${deviceToken}`,
+        authorization: `bearer ${this.token()}`,
+        'apns-topic': this.config.bundleId,
+        'apns-push-type': 'alert',
+        'apns-priority': '10',
+      });
+      let responseBody = '';
+      req.setEncoding('utf8');
+      req.on('data', chunk => { responseBody += chunk; });
+      req.on('response', headers => {
+        const status = Number(headers[':status'] || 0);
+        req.on('end', () => {
+          client.close();
+          if (status >= 200 && status < 300) resolve();
+          else {
+            const err = new Error(responseBody || `APNs returned ${status}`);
+            err.statusCode = status;
+            reject(err);
+          }
+        });
+      });
+      req.on('error', err => {
+        client.close();
+        reject(err);
+      });
+      req.end(JSON.stringify({
+        aps: {
+          alert: { title, body },
+          sound: 'default',
+        },
+      }));
+    });
+  }
+
+  token() {
+    const now = Math.floor(Date.now() / 1000);
+    if (this.jwt && now - this.jwtCreatedAt < 50 * 60) return this.jwt;
+    const header = base64Url(JSON.stringify({ alg: 'ES256', kid: this.config.keyId }));
+    const payload = base64Url(JSON.stringify({ iss: this.config.teamId, iat: now }));
+    const input = `${header}.${payload}`;
+    const signature = crypto.sign('sha256', Buffer.from(input), {
+      key: this.config.privateKey,
+      dsaEncoding: 'ieee-p1363',
+    });
+    this.jwt = `${input}.${base64Url(signature)}`;
+    this.jwtCreatedAt = now;
+    return this.jwt;
+  }
+}
+
+function base64Url(value) {
+  return Buffer.from(value).toString('base64url');
+}
+
+fcm = initFirebase();
+apns = initApns();
 
 function diffAndPush(prev, next) {
   const prevUids = new Set((prev?.notifications || []).map(n => n.uid));
@@ -84,7 +241,7 @@ const server = http.createServer((req, res) => {
   // Locked-phone push test: hit /push-test?device=A to send a canned push.
   if (req.method === 'GET' && req.url.startsWith('/push-test')) {
     const device = new URL(req.url, 'http://x').searchParams.get('device');
-    const has = !!pushSubs[device];
+    const has = !!pushSubs[device] || !!nativePushTokens[device];
     if (has) sendPush(device, 'Test', 'Locked-phone push test');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ device, subscribed: has }));
@@ -96,11 +253,16 @@ const server = http.createServer((req, res) => {
     req.on('data', d => { body += d; });
     req.on('end', () => {
       try {
-        const { device, subscription } = JSON.parse(body);
+        const { device, subscription, nativeToken, platform } = JSON.parse(body);
         if (device && subscription) {
           pushSubs[device] = subscription;
           saveSubs();
-          console.log(`[push] Subscription stored for device ${device}`);
+          console.log(`[push] Web subscription stored for device ${device}`);
+        }
+        if (device && nativeToken && ['android', 'ios'].includes(platform)) {
+          nativePushTokens[device] = { token: nativeToken, platform };
+          saveSubs();
+          console.log(`[push] Native ${platform} token stored for device ${device}`);
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end('{"ok":true}');

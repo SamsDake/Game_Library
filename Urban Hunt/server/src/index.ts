@@ -403,11 +403,12 @@ io.on("connection", socket => {
     ack({ ok: true, serverTime: Date.now() });
   });
 
-  socket.on("register_push", (payload: { playerId?: string; playerSecret?: string; subscription?: unknown } = {}, ack = noop) => {
+  socket.on("register_push", (payload: { playerId?: string; playerSecret?: string; subscription?: unknown; nativeToken?: string; platform?: string } = {}, ack = noop) => {
     const verified = payload.playerId && state.players[payload.playerId]?.secret === payload.playerSecret
       ? payload.playerId
       : socket.data.playerId;
     push.register(verified, payload?.subscription as never);
+    push.registerNative(verified, payload?.nativeToken, payload?.platform);
     ack({ ok: true });
   });
 

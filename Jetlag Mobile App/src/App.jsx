@@ -1,5 +1,7 @@
 // App.jsx — single-device web app: device gate (admin-locked) + one panel
 import { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { PushNotifications } from '@capacitor/push-notifications';
 import { useGameStore } from './lib/store.js';
 import { HiderPanel } from './components/HiderPanel.jsx';
 import { SeekerPanel } from './components/SeekerPanel.jsx';
@@ -10,6 +12,10 @@ import { HomeScreen, LobbyScreen, CountdownScreen, RelocateScreen, FoundScreen, 
 const DEVICE_KEY = 'jetlag_device_v1';
 const TWEAK_DEFAULTS = { countdownMins: 120, maxHand: 6, drawOverride: 0 };
 const APP_BASE = import.meta.env.BASE_URL || '/';
+let nativePushToken = null;
+let nativePushListenersReady = false;
+let nativePushRegistering = false;
+let nativePushTarget = null;
 
 function appAsset(path) {
   return `${APP_BASE}${path.replace(/^\/+/, '')}`;
@@ -32,6 +38,58 @@ function urlBase64ToUint8Array(base64) {
   const out = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
   return out;
+}
+
+async function setupNativePush(device, serverUrl) {
+  nativePushTarget = { device, serverUrl };
+  await ensureNativePushListeners();
+  if (nativePushToken) await sendNativePushToken(nativePushToken);
+  try {
+    if (Capacitor.getPlatform() === 'android') {
+      await PushNotifications.createChannel({
+        id: 'game',
+        name: 'Game alerts',
+        importance: 5,
+        visibility: 1,
+        lights: true,
+        vibration: true,
+      });
+    }
+    let permissions = await PushNotifications.checkPermissions();
+    if (permissions.receive === 'prompt') permissions = await PushNotifications.requestPermissions();
+    if (permissions.receive !== 'granted') return;
+    if (!nativePushRegistering) {
+      nativePushRegistering = true;
+      await PushNotifications.register();
+    }
+  } catch {
+    nativePushRegistering = false;
+  }
+}
+
+async function ensureNativePushListeners() {
+  if (nativePushListenersReady) return;
+  nativePushListenersReady = true;
+  await PushNotifications.addListener('registration', async (token) => {
+    nativePushToken = token.value;
+    await sendNativePushToken(token.value);
+  });
+  await PushNotifications.addListener('registrationError', () => {
+    nativePushRegistering = false;
+  });
+}
+
+async function sendNativePushToken(token) {
+  if (!nativePushTarget) return;
+  await fetch(`${nativePushTarget.serverUrl}/push-subscribe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      device: nativePushTarget.device,
+      nativeToken: token,
+      platform: Capacitor.getPlatform(),
+    }),
+  });
 }
 
 // ── Device gate: admin code → pick Phone A / B ──────────────────
@@ -137,6 +195,10 @@ export default function App() {
     if (!device) return;
     async function subscribe() {
       try {
+        if (Capacitor.isNativePlatform()) {
+          await setupNativePush(device, SERVER_URL);
+          return;
+        }
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
         if (Notification.permission === 'default') {
           if (await Notification.requestPermission() !== 'granted') return;
