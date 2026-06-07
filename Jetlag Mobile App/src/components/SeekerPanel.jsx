@@ -157,7 +157,7 @@ export function SeekerPanel({ role, state, actions, hideElapsed, drawOverride, o
     if (aq || blocked || categoryDisabled) return;
     setBusy(true);
     try {
-      const loc = await requestLocation();
+      const loc = C.gps !== 'none' ? await requestLocation() : null;
       actions.askQuestion(cat, idx, cat === 'radar' && C.options[idx] === 'CUSTOM' ? custom.trim() : null, loc);
     } catch {
       alert('Could not get GPS. Check location permissions.');

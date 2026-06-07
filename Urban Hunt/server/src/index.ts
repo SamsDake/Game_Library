@@ -196,8 +196,8 @@ async function handleClaim(req: Request, res: Response) {
   const lastValidLocationAt = hider.history[hider.history.length - 1]?.timestamp || 0;
   if (!lastValidLocationAt || Date.now() - lastValidLocationAt > PLAYER_LOCATION_STALE_MS) return fail(422, "location_stale");
   const submittedCoordinates = [
-    Number(lon ?? req.body.longitude ?? req.body[0]),
-    Number(lat ?? req.body.latitude ?? lng)
+    Number(lon ?? req.body.longitude ?? lng ?? req.body[0]),
+    Number(lat ?? req.body.latitude ?? req.body[1])
   ] as LngLat;
   if ((lon != null || lat != null || lng != null || req.body.longitude != null || req.body.latitude != null)
     && (!Number.isFinite(submittedCoordinates[0]) || !Number.isFinite(submittedCoordinates[1]))) {

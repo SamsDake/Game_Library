@@ -70,6 +70,8 @@ wss.on('connection', (ws, req) => {
   // Send current persisted state immediately so the joining phone catches up.
   if (room.state) {
     ws.send(JSON.stringify({ type: 'state', data: room.state }));
+  } else {
+    ws.send(JSON.stringify({ type: 'empty' }));
   }
 
   ws.on('message', (raw) => {
