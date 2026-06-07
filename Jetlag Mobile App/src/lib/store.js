@@ -358,8 +358,11 @@ export function useGameStore(cfg) {
       patch(s => {
         const aq = s.activeQuestion; if (!aq) return s;
         const cat = CAT_BY_ID[aq.catId];
-        const pool = cat.options.map((_, i) => i).filter(i => !(cat.id === 'radar' && cat.options[i] === 'CUSTOM') && !s.asked[`${cat.id}:${i}`]);
-        const idx = pool.length ? pool[Math.floor(Math.random() * pool.length)] : Math.floor(Math.random() * cat.options.length);
+        const randomizable = cat.options.map((_, i) => i).filter(i => !(cat.id === 'radar' && cat.options[i] === 'CUSTOM'));
+        const pool = randomizable.filter(i => !s.asked[`${cat.id}:${i}`]);
+        const fallback = randomizable.length ? randomizable : cat.options.map((_, i) => i);
+        const source = pool.length ? pool : fallback;
+        const idx = source[Math.floor(Math.random() * source.length)];
         const opt = cat.options[idx];
         const optStr = optionLabel(cat, opt);
         const text = cat.make(typeof opt === 'object' ? opt : optStr);
@@ -436,7 +439,7 @@ export function useGameStore(cfg) {
     mapAddClue({ mode, geometry, label, kind, meta, qid = null, enabled }) {
       patch(s => {
         const isConfirmed = qid != null;
-        const on = enabled !== undefined ? enabled : true; // confirmed & preview both default on
+        const on = enabled !== undefined ? enabled : isConfirmed;
         const cut = { id: uid(), qid, kind: kind || 'deduce', label, polygon: geometry, mode, meta, enabled: on };
         const map = recomputeZone({ ...s.map, cuts: [...s.map.cuts, cut] });
         return { ...s, map, feed: logIn(s, isConfirmed ? `Confirmed: ${label}` : `Seeker preview: ${label}`) };

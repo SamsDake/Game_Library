@@ -16,6 +16,7 @@ import type {
   JoinGamePayload,
   LeaderboardEntry,
   LngLat,
+  LocationUpdatePayload,
   ObjectiveSlot,
   PlayerPublic,
   Role,
@@ -25,6 +26,7 @@ import type {
 type Screen = "lobby" | "waiting" | "admin" | "hider" | "seeker" | "gameover";
 
 const socket: Socket = io(socketServerUrl(), { path: socketIoPath() });
+const PENDING_LOCATION_KEY = "uh_pending_location";
 
 const DEFAULT_CONFIG: GameConfig = {
   pingIntervalMinutes: 3,
@@ -71,6 +73,9 @@ function App() {
   const demoTimer = useRef<number | null>(null);
   const nativeLocationStop = useRef<null | (() => Promise<void>)>(null);
   const locationRunId = useRef(0);
+  const pendingLocation = useRef<LocationUpdatePayload | null>(readPendingLocation());
+  const locationFlushInFlight = useRef(false);
+  const locationRetryTimer = useRef<number | null>(null);
   const heartbeatTimer = useRef<number | null>(null);
   const roleRef = useRef<Role | null>(role);
   useEffect(() => { roleRef.current = role; }, [role]);
@@ -148,7 +153,9 @@ function App() {
       // The server's join_game matches on playerId+secret. Admin can't auto-rejoin (no stored PIN).
       const storedRole = localStorage.getItem("uh_role") as Role | null;
       if (connectedOnceRef.current && pid && secret && storedRole && storedRole !== "ADMIN") {
-        socket.emit("join_game", { role: storedRole, name: localStorage.getItem("uh_name") || storedRole, playerId: pid, playerSecret: secret });
+        socket.emit("join_game", { role: storedRole, name: localStorage.getItem("uh_name") || storedRole, playerId: pid, playerSecret: secret }, (ack: { ok?: boolean }) => {
+          if (ack?.ok) flushPendingLocation();
+        });
       }
       connectedOnceRef.current = true;
       if (pid && secret) void setupPush(socket, pid, secret);
@@ -221,6 +228,7 @@ function App() {
       localStorage.setItem("uh_player_secret", ack.playerSecret);
       localStorage.setItem("uh_name", payload.name || name || ack.role);
       setScreen(ack.role === "ADMIN" ? "admin" : "waiting");
+      flushPendingLocation();
     });
   }
 
@@ -231,6 +239,7 @@ function App() {
     localStorage.removeItem("uh_role");
     localStorage.removeItem("uh_player_id");
     localStorage.removeItem("uh_player_secret");
+    clearPendingLocation();
     setRole(null);
     setPlayerId("");
     setPlayerSecret("");
@@ -240,20 +249,20 @@ function App() {
 
   function startLocation() {
     if (geoWatch.current || demoTimer.current || nativeLocationStop.current) return;
-    const send = (coords: LngLat, accuracy: number | null) => {
-      socket.emit("location_update", {
+    const send = (coords: LngLat, accuracy: number | null, timestamp = new Date().toISOString()) => {
+      queueLocation({
         playerId,
-        gameId: hider?.gameId || null,
+        gameId: hider?.gameId || undefined,
         coordinates: coords,
         accuracy,
-        timestamp: new Date().toISOString()
+        timestamp
       });
     };
     if (canUseNativeLocation()) {
       const runId = ++locationRunId.current;
       void startNativeLocation({
-        socket,
         gameId: hider?.gameId || null,
+        sendLocation: payload => queueLocation({ ...payload, playerId }),
         onError: reason => setMessage(`${reason}. Live GPS is required to play and claim objectives.`)
       }).then(stop => {
         if (locationRunId.current !== runId) {
@@ -307,6 +316,46 @@ function App() {
     geoWatch.current = null;
     demoTimer.current = null;
     nativeLocationStop.current = null;
+  }
+
+  function queueLocation(payload: LocationUpdatePayload) {
+    pendingLocation.current = payload;
+    writePendingLocation(payload);
+    flushPendingLocation();
+  }
+
+  function flushPendingLocation() {
+    if (locationFlushInFlight.current || !pendingLocation.current || !socket.connected) return;
+    const payload = pendingLocation.current;
+    locationFlushInFlight.current = true;
+    socket.timeout(8000).emit("location_update", payload, (err: Error | null, ack?: { ok?: boolean; error?: string }) => {
+      locationFlushInFlight.current = false;
+      if (!err && ack?.ok) {
+        if (pendingLocation.current === payload) clearPendingLocation();
+        else flushPendingLocation();
+        return;
+      }
+      if (!err && pendingLocation.current === payload && (ack?.error === "not_active" || ack?.error === "invalid_coordinates")) {
+        clearPendingLocation();
+        return;
+      }
+      scheduleLocationFlush();
+    });
+  }
+
+  function scheduleLocationFlush() {
+    if (locationRetryTimer.current || !pendingLocation.current) return;
+    locationRetryTimer.current = window.setTimeout(() => {
+      locationRetryTimer.current = null;
+      flushPendingLocation();
+    }, 5000);
+  }
+
+  function clearPendingLocation() {
+    pendingLocation.current = null;
+    localStorage.removeItem(PENDING_LOCATION_KEY);
+    if (locationRetryTimer.current) clearTimeout(locationRetryTimer.current);
+    locationRetryTimer.current = null;
   }
 
   function sendHeartbeat() {
@@ -878,6 +927,31 @@ function claimErrorText(error: string) {
     objective_changed: "objective changed; reopen the claim sheet"
   };
   return labels[error] || error;
+}
+
+function readPendingLocation(): LocationUpdatePayload | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PENDING_LOCATION_KEY) || "null") as Partial<LocationUpdatePayload> | null;
+    if (!parsed || !Array.isArray(parsed.coordinates) || parsed.coordinates.length !== 2) return null;
+    if (!Number.isFinite(parsed.coordinates[0]) || !Number.isFinite(parsed.coordinates[1])) return null;
+    return {
+      gameId: parsed.gameId,
+      playerId: parsed.playerId,
+      coordinates: parsed.coordinates as LngLat,
+      accuracy: parsed.accuracy ?? null,
+      timestamp: String(parsed.timestamp || new Date().toISOString())
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writePendingLocation(payload: LocationUpdatePayload) {
+  try {
+    localStorage.setItem(PENDING_LOCATION_KEY, JSON.stringify(payload));
+  } catch {
+    // If storage is unavailable, the in-memory pending location still retries.
+  }
 }
 
 function distanceMeters(a: LngLat, b: LngLat) {

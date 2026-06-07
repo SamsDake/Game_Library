@@ -2,8 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { registerPlugin } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import type { BackgroundGeolocationPlugin } from "@capacitor-community/background-geolocation";
-import type { Socket } from "socket.io-client";
-import type { LngLat } from "@shared/types";
+import type { LngLat, LocationUpdatePayload } from "@shared/types";
 
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>("BackgroundGeolocation");
 
@@ -12,8 +11,8 @@ export function canUseNativeLocation() {
 }
 
 export async function startNativeLocation(options: {
-  socket: Socket;
   gameId: string | null;
+  sendLocation: (payload: LocationUpdatePayload) => void;
   onError: (message: string) => void;
 }) {
   if (Capacitor.getPlatform() !== "android") {
@@ -35,8 +34,8 @@ export async function startNativeLocation(options: {
       }
       if (!position) return;
       const coordinates: LngLat = [position.longitude, position.latitude];
-      options.socket.emit("location_update", {
-        gameId: options.gameId,
+      options.sendLocation({
+        gameId: options.gameId || undefined,
         coordinates,
         accuracy: position.accuracy ?? null,
         timestamp: new Date(position.time || Date.now()).toISOString()
@@ -50,8 +49,8 @@ export async function startNativeLocation(options: {
 }
 
 async function startForegroundNativeLocation(options: {
-  socket: Socket;
   gameId: string | null;
+  sendLocation: (payload: LocationUpdatePayload) => void;
   onError: (message: string) => void;
 }) {
   await Geolocation.requestPermissions();
@@ -65,8 +64,8 @@ async function startForegroundNativeLocation(options: {
       }
       if (!position) return;
       const coordinates: LngLat = [position.coords.longitude, position.coords.latitude];
-      options.socket.emit("location_update", {
-        gameId: options.gameId,
+      options.sendLocation({
+        gameId: options.gameId || undefined,
         coordinates,
         accuracy: position.coords.accuracy ?? null,
         timestamp: new Date(position.timestamp).toISOString()
