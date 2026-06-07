@@ -145,13 +145,16 @@ export function SeekerPanel({ role, state, actions, hideElapsed, drawOverride, o
   const C = CAT_BY_ID[cat];
   const aq = state.activeQuestion;
   const blocked = state.effects.some(e => e.block && !e.proofUid);
+  const spottyMemoryCat = state.spottyMemoryCat;
+  const spottyMemoryName = spottyMemoryCat ? CAT_BY_ID[spottyMemoryCat]?.name : null;
+  const categoryDisabled = cat === spottyMemoryCat;
 
   if (sheet === 'log') return <Sheet title="Question log" icon="list" onClose={() => setSheet(null)}><QuestionLog state={state} /></Sheet>;
   if (sheet === 'gallery') return <Sheet title="Photo gallery" icon="gallery" onClose={() => setSheet(null)}><Gallery state={state} /></Sheet>;
   if (sheet === 'map') return <SeekerMap state={state} actions={actions} onClose={() => setSheet(null)} />;
 
   const ask = async (idx) => {
-    if (aq || blocked) return;
+    if (aq || blocked || categoryDisabled) return;
     setBusy(true);
     try {
       const loc = await requestLocation();
@@ -190,10 +193,11 @@ export function SeekerPanel({ role, state, actions, hideElapsed, drawOverride, o
       {!aq && (
         <>
           {blocked && <div className="block-banner"><Icon name="lock" size={16} /> Questions locked — clear the curse above by sending proof.</div>}
+          {spottyMemoryName && <div className="block-banner"><Icon name="lock" size={16} /> Spotty Memory - {spottyMemoryName} questions are disabled.</div>}
           <div className="sk-section-label">Question category</div>
           <div className="cat-rail">
             {CATEGORIES.map(c => (
-              <button key={c.id} className={`cat-chip${cat === c.id ? ' is-on' : ''}`} onClick={() => setCat(c.id)}>
+              <button key={c.id} className={`cat-chip${cat === c.id ? ' is-on' : ''}`} disabled={c.id === spottyMemoryCat} onClick={() => setCat(c.id)}>
                 <Icon name={c.glyph} size={18} /> <span>{c.name}</span>
               </button>
             ))}
@@ -207,9 +211,9 @@ export function SeekerPanel({ role, state, actions, hideElapsed, drawOverride, o
               const isCustom = o === 'CUSTOM';
               const asked = !isCustom && state.asked[`${cat}:${i}`];
               return (
-                <button key={i} className={`q-item${asked ? ' is-asked' : ''}`} disabled={busy || blocked || asked || (isCustom && !custom.trim())} onClick={() => ask(i)}>
+                <button key={i} className={`q-item${asked ? ' is-asked' : ''}`} disabled={busy || blocked || categoryDisabled || asked || (isCustom && !custom.trim())} onClick={() => ask(i)}>
                   <span className="q-text">{isCustom ? `Custom: ${custom.trim() || '—'}` : optionLabel(C, o)}</span>
-                  <span className="q-draw">{asked ? 'asked' : busy ? '…' : 'ask'}</span>
+                  <span className="q-draw">{categoryDisabled ? 'disabled' : asked ? 'asked' : busy ? '…' : 'ask'}</span>
                 </button>
               );
             })}

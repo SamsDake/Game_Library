@@ -1,6 +1,6 @@
 // store.js — Zustand game store (v3 design + Leaflet map state)
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { CAT_BY_ID, DECK_BY_ID, DEFAULT_DECK_CONFIG, buildDeck, SEED_LEADERBOARD, optionLabel } from './data.js';
+import { CATEGORIES, CAT_BY_ID, DECK_BY_ID, DEFAULT_DECK_CONFIG, buildDeck, SEED_LEADERBOARD, optionLabel } from './data.js';
 import { applyClue, computeConstraint, bisectorHalfPlane } from './geometry.js';
 
 const LS_KEY = 'jetlag_state_v4';
@@ -42,6 +42,7 @@ function freshState(cfg) {
     activeQuestion: null,
     questionLog: [],
     effects: [],
+    spottyMemoryCat: null,
     conditionalBonuses: [],
     photos: [],
     notifications: [],
@@ -66,6 +67,8 @@ function loadState(cfg) {
       if (!s.deck) s.deck = buildDeck(s.deckConfig);
       if (!s.notifications) s.notifications = [];
       if (!s.asked) s.asked = {};
+      if (!('spottyMemoryCat' in s)) s.spottyMemoryCat = null;
+      if (!s.spottyMemoryCat && s.effects?.some(e => e.cardId === 'spotty_memory')) s.spottyMemoryCat = randomQuestionCategory();
       if (!s.map) s.map = freshMapState();
       if (!s.map.selectedCountryIds) s.map.selectedCountryIds = [];
       if (!s.map.cuts) s.map.cuts = [];
@@ -102,6 +105,18 @@ function drawCards(deck, n, cfg) {
     cards.push({ uid: uid(), cardId: d.pop() });
   }
   return { cards, deck: d };
+}
+
+function randomQuestionCategory() {
+  return CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)]?.id || null;
+}
+
+function hasSpottyMemory(s) {
+  return s.effects.some(e => e.cardId === 'spotty_memory');
+}
+
+function nextSpottyMemoryCat(s) {
+  return hasSpottyMemory(s) ? randomQuestionCategory() : null;
 }
 
 // Recompute currentZone from baseZone + all cuts
@@ -195,6 +210,7 @@ export function useGameStore(cfg) {
       const instruction = cat.id === 'photo' ? cat.options[optIndex].note : '';
       const qid = uid();
       patch(s => {
+        if (s.spottyMemoryCat === catId) return s;
         const pausedTotal = s.pausedAccum + (s.paused && !s.huntFrozenAt && s.pausedAt ? Date.now() - s.pausedAt : 0);
         const activeTime = Date.now() - pausedTotal;
         // The seeker's GPS is already captured at ask time, so auto-share it as p1
@@ -214,6 +230,7 @@ export function useGameStore(cfg) {
           mapPin: s.map.pin,
         };
         return { ...s, activeQuestion: aq,
+          spottyMemoryCat: nextSpottyMemoryCat(s),
           asked: isCustom ? s.asked : { ...s.asked, [`${catId}:${optIndex}`]: true },
           feed: logIn(s, `Seeker asked: "${text}"`),
           notifications: notif(s, 'hider', 'New question', text) };
@@ -314,13 +331,14 @@ export function useGameStore(cfg) {
           effects = [{ uid: effUid, cardId: card.id, type: 'curse', title: card.title, text: card.text,
             playedAt: Date.now(), playedAtActiveTime: activeTime, block: !!card.block, duration: card.duration || null, persist: !!card.persist,
             needsProof: !!card.block, proofUid: null }, ...effects];
+          const spottyMemoryCat = card.id === 'spotty_memory' ? randomQuestionCategory() : s.spottyMemoryCat;
           if (card.id === 'impressionable') s = { ...s, freeQuestion: 1 };
           const conditionalBonuses = card.bonusCondition
             ? [...(s.conditionalBonuses || []), { uid: effUid, cardId: card.id, title: card.title, min: card.bonusCondition.min, question: card.bonusCondition.text, applies: null }]
             : (s.conditionalBonuses || []);
           notifications = notif(s, 'seeker', 'Curse played', card.title);
           feed = logIn(s, `Hiders played "${card.title}"${paid}.`);
-          return { ...s, bonusMs, effects, conditionalBonuses, drawBonus, notifications, feed, hand: s.hand.filter(h => !remove.has(h.uid)) };
+          return { ...s, bonusMs, effects, spottyMemoryCat, conditionalBonuses, drawBonus, notifications, feed, hand: s.hand.filter(h => !remove.has(h.uid)) };
         } else { feed = logIn(s, `Hiders played "${card.title}"${paid}.`); }
         return { ...s, bonusMs, effects, drawBonus, notifications, feed, hand: s.hand.filter(h => !remove.has(h.uid)) };
       });
@@ -393,7 +411,13 @@ export function useGameStore(cfg) {
       });
     },
 
-    clearEffect(effectUid) { patch(s => ({ ...s, effects: s.effects.filter(e => e.uid !== effectUid) })); },
+    clearEffect(effectUid) {
+      patch(s => {
+        const effects = s.effects.filter(e => e.uid !== effectUid);
+        const spottyMemoryCat = effects.some(e => e.cardId === 'spotty_memory') ? s.spottyMemoryCat : null;
+        return { ...s, effects, spottyMemoryCat };
+      });
+    },
     discardCard(cardUid) { patch(s => ({ ...s, hand: s.hand.filter(h => h.uid !== cardUid) })); },
     dismissNotification(nUid) { patch(s => ({ ...s, notifications: s.notifications.filter(n => n.uid !== nUid) })); },
 
