@@ -78,6 +78,14 @@ jobs:
           print('Fixed Package.swift')
           "
 
+      - name: List Xcode targets and schemes
+        working-directory: Urban Hunt
+        run: xcodebuild -list -project ios/App/App.xcodeproj
+
+      - name: Show Package.swift after fix
+        working-directory: Urban Hunt
+        run: cat ios/App/CapApp-SPM/Package.swift
+
       - name: Build unsigned app
         working-directory: Urban Hunt
         run: |
@@ -91,7 +99,15 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            DEVELOPMENT_TEAM=""
+            DEVELOPMENT_TEAM="" \
+            2>&1 | tee xcodebuild.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: Urban Hunt/xcodebuild.log
 
       - name: Package as IPA
         working-directory: Urban Hunt
