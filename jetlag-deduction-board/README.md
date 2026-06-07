@@ -96,7 +96,7 @@ Earth's curvature rather than being flat pixel circles.
   Run it from your laptop:
 
   ```bash
-  npm run preload                              # default: NL, BE, LU, FR, DE
+  npm run preload                              # default: NL, BE, LU, FR, DE, GB
   npm run preload -- --countries NL,BE,DE      # custom country set (ISO alpha-2)
   npm run preload -- --features airport,railway,hospital
   npm run preload -- --admin 4,6,8             # which admin levels to bundle
@@ -123,6 +123,7 @@ Earth's curvature rather than being flat pixel circles.
 
   ```bash
   npm run preload -- --countries IT            # add Italy to all features
+  npm run preload -- --countries UK            # add the UK (alias for ISO GB)
   npm run preload -- --features golf,consulate # add features you skipped
   npm run preload -- --admin 10                # add an admin level
   ```
@@ -135,7 +136,7 @@ Earth's curvature rather than being flat pixel circles.
 
   It queries per country using OSM area filters (precise; doesn't drag in
   neighbours), merges and de-duplicates across countries, and writes one file
-  per feature plus a `manifest.json`. The whole run for five countries and all
+  per feature plus a `manifest.json`. The whole run for the default countries and all
   features can take 10–20 minutes (it paces requests to be polite to the public
   servers) and produces several MB of data — that's the trade-off for instant
   in-game lookups. Re-run any time to refresh; commit `public/preload/` so it
