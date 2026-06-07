@@ -46,6 +46,139 @@ jobs:
           name: urban-hunt-android
           path: Urban Hunt/android/app/build/outputs/apk/debug/app-debug.apk
 
+  jetlag-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install deps and build web client
+        working-directory: Jetlag Mobile App
+        run: |
+          npm install
+          VITE_SERVER_URL=https://comicsams.cloud/jetlag-api \
+          VITE_WS_URL=wss://comicsams.cloud/jetlag-ws \
+          npm run build
+
+      - name: Add and sync Android platform
+        working-directory: Jetlag Mobile App
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Add location permissions to AndroidManifest
+        working-directory: Jetlag Mobile App
+        run: |
+          python3 -c "
+          import re
+          path = 'android/app/src/main/AndroidManifest.xml'
+          with open(path) as f:
+              content = f.read()
+          perms = '''    <uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\" />
+              <uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\" />
+          '''
+          if 'ACCESS_FINE_LOCATION' not in content:
+              content = content.replace('<application', perms + '    <application', 1)
+          with open(path, 'w') as f:
+              f.write(content)
+          print('AndroidManifest updated')
+          "
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Make gradlew executable
+        working-directory: Jetlag Mobile App/android
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        working-directory: Jetlag Mobile App/android
+        run: ./gradlew assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jetlag-android
+          path: Jetlag Mobile App/android/app/build/outputs/apk/debug/app-debug.apk
+
+  jetlag-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install deps and build web client
+        working-directory: Jetlag Mobile App
+        run: |
+          npm install
+          VITE_SERVER_URL=https://comicsams.cloud/jetlag-api \
+          VITE_WS_URL=wss://comicsams.cloud/jetlag-ws \
+          npm run build
+
+      - name: Add and sync iOS platform
+        working-directory: Jetlag Mobile App
+        run: |
+          npx cap add ios
+          npx cap sync ios
+
+      - name: Add location permissions to Info.plist
+        working-directory: Jetlag Mobile App
+        run: |
+          python3 -c "
+          import plistlib
+          path = 'ios/App/App/Info.plist'
+          with open(path, 'rb') as f:
+              plist = plistlib.load(f)
+          plist['NSLocationWhenInUseUsageDescription'] = 'Jetlag uses your location during the active game.'
+          plist['NSLocationAlwaysAndWhenInUseUsageDescription'] = 'Jetlag uses your location during the active game, even when backgrounded.'
+          plist['UIBackgroundModes'] = plist.get('UIBackgroundModes', []) + ['location']
+          with open(path, 'wb') as f:
+              plistlib.dump(plist, f)
+          print('Info.plist updated')
+          "
+
+      - name: Build unsigned app
+        working-directory: Jetlag Mobile App
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -target App \
+            -configuration Release \
+            -sdk iphoneos \
+            SYMROOT="$(pwd)/build" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            2>&1 | tee xcodebuild.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jetlag-xcodebuild-log
+          path: Jetlag Mobile App/xcodebuild.log
+
+      - name: Package as IPA
+        working-directory: Jetlag Mobile App
+        run: |
+          mkdir Payload
+          cp -r build/Release-iphoneos/App.app Payload/
+          zip -r Jetlag.ipa Payload/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jetlag-ios
+          path: Jetlag Mobile App/Jetlag.ipa
+
   ios:
     runs-on: macos-latest
     steps:

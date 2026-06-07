@@ -16,7 +16,14 @@ export function fmtTimeOfDay(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function requestLocation() {
+export async function requestLocation() {
+  // Use native Capacitor plugin on iOS/Android for reliable GPS permissions
+  if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) {
+    const { Geolocation } = await import('@capacitor/geolocation');
+    const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+    const { latitude: lat, longitude: lng } = pos.coords;
+    return { lat, lng, label: `${lat.toFixed(4)}, ${lng.toFixed(4)}` };
+  }
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('GPS not available on this device'));
     let done = false;

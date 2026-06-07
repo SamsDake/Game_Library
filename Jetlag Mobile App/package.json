@@ -11,6 +11,11 @@
     "preload": "node scripts/preload-data.js"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/geolocation": "^8.0.0",
+    "@capacitor/ios": "^8.4.0",
     "@turf/turf": "^7.3.5",
     "leaflet": "^1.9.4",
     "osmtogeojson": "^3.0.0-beta.5",
