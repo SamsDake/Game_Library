@@ -6,11 +6,6 @@ const config: CapacitorConfig = {
   webDir: "client/dist",
   server: {
     androidScheme: "https"
-  },
-  android: {
-    // Required by @capacitor-community/background-geolocation to keep Android
-    // background updates alive beyond the WebView bridge throttle window.
-    useLegacyBridge: true
   }
 };
 

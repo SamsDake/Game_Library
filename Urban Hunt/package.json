@@ -21,10 +21,10 @@
     "native:ios": "cap open ios"
   },
   "dependencies": {
-    "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor/android": "^8.4.0",
     "@capacitor/cli": "^8.4.0",
     "@capacitor/core": "^8.4.0",
+    "@capacitor/geolocation": "*",
     "@capacitor/ios": "^8.4.0",
     "@turf/turf": "^7.2.0",
     "@vitejs/plugin-react": "^4.3.4",

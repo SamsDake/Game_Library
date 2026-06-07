@@ -21,7 +21,7 @@ jobs:
       - name: Build web client
         working-directory: Urban Hunt
         run: |
-          npm ci
+          npm install
           VITE_API_BASE_URL=https://comicsams.cloud/urban-hunt npm run build
 
       - name: Sync Capacitor to Android
@@ -45,6 +45,81 @@ jobs:
         with:
           name: urban-hunt-android
           path: Urban Hunt/android/app/build/outputs/apk/debug/app-debug.apk
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build web client
+        working-directory: Urban Hunt
+        run: |
+          npm install
+          VITE_API_BASE_URL=https://comicsams.cloud/urban-hunt npm run build
+
+      - name: Sync Capacitor to iOS
+        working-directory: Urban Hunt
+        run: npx cap sync ios
+
+      - name: Ensure location permissions in Info.plist
+        working-directory: Urban Hunt
+        run: |
+          python3 -c "
+          import plistlib
+          path = 'ios/App/App/Info.plist'
+          with open(path, 'rb') as f:
+              plist = plistlib.load(f)
+          plist['NSLocationWhenInUseUsageDescription'] = 'Urban Hunt uses your location so seekers and hiders can play the active game.'
+          plist['NSLocationAlwaysAndWhenInUseUsageDescription'] = 'Urban Hunt uses your location while the app is backgrounded or the device is locked during an active game.'
+          modes = plist.get('UIBackgroundModes', [])
+          if 'location' not in modes:
+              modes.append('location')
+          plist['UIBackgroundModes'] = modes
+          with open(path, 'wb') as f:
+              plistlib.dump(plist, f)
+          print('NSLocationWhenInUseUsageDescription:', plist.get('NSLocationWhenInUseUsageDescription'))
+          print('NSLocationAlwaysAndWhenInUseUsageDescription:', plist.get('NSLocationAlwaysAndWhenInUseUsageDescription'))
+          print('UIBackgroundModes:', plist.get('UIBackgroundModes'))
+          "
+
+      - name: Build unsigned app
+        working-directory: Urban Hunt
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -target App \
+            -configuration Release \
+            -sdk iphoneos \
+            SYMROOT="$(pwd)/build" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            2>&1 | tee xcodebuild.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: Urban Hunt/xcodebuild.log
+
+      - name: Package as IPA
+        working-directory: Urban Hunt
+        run: |
+          mkdir Payload
+          cp -r build/Release-iphoneos/App.app Payload/
+          zip -r UrbanHunt.ipa Payload/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: urban-hunt-ios
+          path: Urban Hunt/UrbanHunt.ipa
 
   jetlag-android:
     runs-on: ubuntu-latest
@@ -73,13 +148,10 @@ jobs:
         working-directory: Jetlag Mobile App
         run: |
           python3 -c "
-          import re
           path = 'android/app/src/main/AndroidManifest.xml'
           with open(path) as f:
               content = f.read()
-          perms = '''    <uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\" />
-              <uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\" />
-          '''
+          perms = '    <uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\" />\n    <uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\" />\n'
           if 'ACCESS_FINE_LOCATION' not in content:
               content = content.replace('<application', perms + '    <application', 1)
           with open(path, 'w') as f:
@@ -138,10 +210,13 @@ jobs:
               plist = plistlib.load(f)
           plist['NSLocationWhenInUseUsageDescription'] = 'Jetlag uses your location during the active game.'
           plist['NSLocationAlwaysAndWhenInUseUsageDescription'] = 'Jetlag uses your location during the active game, even when backgrounded.'
-          plist['UIBackgroundModes'] = plist.get('UIBackgroundModes', []) + ['location']
+          modes = plist.get('UIBackgroundModes', [])
+          if 'location' not in modes:
+              modes.append('location')
+          plist['UIBackgroundModes'] = modes
           with open(path, 'wb') as f:
               plistlib.dump(plist, f)
-          print('Info.plist updated')
+          print('NSLocationWhenInUseUsageDescription:', plist.get('NSLocationWhenInUseUsageDescription'))
           "
 
       - name: Build unsigned app
@@ -178,141 +253,3 @@ jobs:
         with:
           name: jetlag-ios
           path: Jetlag Mobile App/Jetlag.ipa
-
-  ios:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Build web client
-        working-directory: Urban Hunt
-        run: |
-          npm ci
-          VITE_API_BASE_URL=https://comicsams.cloud/urban-hunt npm run build
-
-      - name: Sync Capacitor to iOS
-        working-directory: Urban Hunt
-        run: npx cap sync ios
-
-      - name: Ensure location permissions in Info.plist
-        working-directory: Urban Hunt
-        run: |
-          python3 -c "
-          import plistlib
-          path = 'ios/App/App/Info.plist'
-          with open(path, 'rb') as f:
-              plist = plistlib.load(f)
-          plist.setdefault('NSLocationWhenInUseUsageDescription', 'Urban Hunt uses your location so seekers and hiders can play the active game.')
-          plist.setdefault('NSLocationAlwaysAndWhenInUseUsageDescription', 'Urban Hunt uses your location while the app is backgrounded or the device is locked during an active game.')
-          modes = plist.get('UIBackgroundModes', [])
-          if 'location' not in modes:
-              modes.append('location')
-          plist['UIBackgroundModes'] = modes
-          with open(path, 'wb') as f:
-              plistlib.dump(plist, f)
-          print('NSLocationWhenInUseUsageDescription:', plist.get('NSLocationWhenInUseUsageDescription'))
-          print('NSLocationAlwaysAndWhenInUseUsageDescription:', plist.get('NSLocationAlwaysAndWhenInUseUsageDescription'))
-          print('UIBackgroundModes:', plist.get('UIBackgroundModes'))
-          "
-
-      - name: Inline background-geolocation into CapApp-SPM (bypass Capacitor 7 SPM conflict)
-        working-directory: Urban Hunt
-        run: |
-          python3 << 'PYEOF'
-          import os, shutil, re, sys
-
-          bg_src = "node_modules/@capacitor-community/background-geolocation/ios/Plugin"
-          spm_sources = "ios/App/CapApp-SPM/Sources/CapApp-SPM"
-          pkg_path = "ios/App/CapApp-SPM/Package.swift"
-
-          # Copy Swift source files from the plugin into CapApp-SPM sources
-          if os.path.isdir(bg_src):
-              copied = []
-              for fname in os.listdir(bg_src):
-                  if fname.endswith(".swift"):
-                      shutil.copy2(os.path.join(bg_src, fname), os.path.join(spm_sources, fname))
-                      copied.append(fname)
-              print(f"Copied Swift sources: {copied}")
-          else:
-              print(f"ERROR: {bg_src} not found — listing node_modules:", file=sys.stderr)
-              for p in os.listdir("node_modules/@capacitor-community"):
-                  print(f"  {p}", file=sys.stderr)
-              sys.exit(1)
-
-          # Patch CapApp-SPM/Package.swift:
-          #   1. Fix Windows backslash paths
-          #   2. Remove the background-geolocation package dependency (Swift files are now inline)
-          with open(pkg_path) as f:
-              content = f.read()
-
-          print("--- Package.swift before patch ---")
-          print(content)
-          print("---")
-
-          # Fix Windows paths
-          content = content.replace("\\", "/")
-
-          # Remove the background-geolocation .package(...) entry
-          content = re.sub(
-              r",?\s*\.package\(\s*name:\s*\"CapacitorCommunityBackgroundGeolocation\"[^)]*\)",
-              "",
-              content,
-          )
-
-          # Remove the .product(...) dependency in the target
-          content = re.sub(
-              r",?\s*\.product\(\s*name:\s*\"CapacitorCommunityBackgroundGeolocation\"[^)]*\)",
-              "",
-              content,
-          )
-
-          with open(pkg_path, "w") as f:
-              f.write(content)
-
-          print("--- Package.swift after patch ---")
-          print(content)
-          print("---")
-          PYEOF
-
-      - name: List Xcode targets and schemes
-        working-directory: Urban Hunt
-        run: xcodebuild -list -project ios/App/App.xcodeproj
-
-      - name: Build unsigned app
-        working-directory: Urban Hunt
-        run: |
-          set -o pipefail
-          xcodebuild \
-            -project ios/App/App.xcodeproj \
-            -target App \
-            -configuration Release \
-            -sdk iphoneos \
-            SYMROOT="$(pwd)/build" \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            DEVELOPMENT_TEAM="" \
-            2>&1 | tee xcodebuild.log
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xcodebuild-log
-          path: Urban Hunt/xcodebuild.log
-
-      - name: Package as IPA
-        working-directory: Urban Hunt
-        run: |
-          mkdir Payload
-          cp -r build/Release-iphoneos/App.app Payload/
-          zip -r UrbanHunt.ipa Payload/
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: urban-hunt-ios
-          path: Urban Hunt/UrbanHunt.ipa
