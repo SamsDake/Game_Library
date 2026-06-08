@@ -236,7 +236,10 @@ function sendDiscordWebhook(title, text, to) {
   else if (to === 'seeker') mention = `${DISCORD_SEEKERS_MENTION} `;
 
   const content = `${mention}**${title}** — ${text}`;
-  const payload = JSON.stringify({ content });
+  const payload = JSON.stringify({
+    content,
+    allowed_mentions: { roles: ['1513568198832951338', '1513568328612839434'] },
+  });
 
   const url = new URL(DISCORD_WEBHOOK_URL);
   const req = require('https').request({
