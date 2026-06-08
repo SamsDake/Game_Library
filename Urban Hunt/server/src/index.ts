@@ -13,9 +13,11 @@ import type {
   AppState,
   ClaimRecord,
   GameHistoryEntry,
+  GameMode,
   GameState,
   HiderState,
   HiderStatusPayload,
+  HiderTeamRole,
   JoinGamePayload,
   LeaderboardEntry,
   LocationUpdatePayload,
@@ -24,6 +26,8 @@ import type {
   ObjectiveSlot,
   PlayerInternal,
   PlayerPublic,
+  Safehouse,
+  SafehouseState,
   SeekerPingPayload,
   SeekerState
 } from "../../shared/types";
@@ -189,6 +193,8 @@ async function handleClaim(req: Request, res: Response) {
   if (!game || game.phase !== "active") return fail(409, "game_not_active");
   if (!player || player.role !== "HIDER" || player.secret !== playerSecret) return fail(403, "invalid_player");
   if (!hider) return fail(404, "hider_not_found");
+  if (game.config.mode === "SAFEHOUSES") return fail(409, "no_objectives");
+  if (game.config.mode === "VIP_ESCORT" && hider.hiderRole !== "VIP") return fail(403, "not_vip");
   if (hider.caughtAt) return fail(409, "hider_caught");
   if (hider.isOutOfBounds) return fail(409, "out_of_bounds");
   if (!req.file) return fail(400, "photo_required");
@@ -232,11 +238,21 @@ async function handleClaim(req: Request, res: Response) {
   hider.claims.push(claim);
   game.claims.push(claim);
   hider.score += scoreValue;
-  push.sendToMany(Object.keys(game.seekers), {
-    title: "Objective Claimed",
-    body: `${player.name} completed an objective (+${scoreValue}pt).`,
-    tag: "claim"
-  });
+  if (game.config.mode === "VIP_ESCORT") {
+    // Deception rule: seekers get a non-specific marker that the VIP is active — no name, no place.
+    emitAlert("An objective has been cleared!");
+    push.sendToMany([...Object.keys(game.seekers), ...Object.keys(game.hiders)], {
+      title: "Objective Cleared",
+      body: "An objective has been cleared!",
+      tag: "objective"
+    });
+  } else {
+    push.sendToMany(Object.keys(game.seekers), {
+      title: "Objective Claimed",
+      body: `${player.name} completed an objective (+${scoreValue}pt).`,
+      tag: "claim"
+    });
+  }
   hider.activeObjectives = hider.activeObjectives.filter(slot => slot.slotId !== objectiveSlot.slotId);
   if (objectiveSlot.kind === "regular") {
     hider.objectiveIndex += 1;
@@ -244,6 +260,10 @@ async function handleClaim(req: Request, res: Response) {
   }
   await syncHiderObjectives(hider, game);
   await db.insertClaim(game.id, claim);
+  if (game.config.mode === "VIP_ESCORT") {
+    const cleared = hider.claims.filter(c => c.status === "accepted").length;
+    if (cleared >= game.config.vipObjectiveTarget) await finishGame("HIDERS");
+  }
   await saveAndEmit();
   res.json({ ok: true, claim, nextObjective: hider.activeObjective, nextObjectives: hider.activeObjectives });
 }
@@ -420,6 +440,20 @@ io.on("connection", socket => {
     if (!player || !game || game.phase !== "active") return ack({ ok: false, error: "not_active" });
     if (player.role !== "HIDER" || !hider) return ack({ ok: false, error: "not_hider" });
 
+    // VIP Escort: catching the VIP ends the game; catching a bodyguard only burns a decoy.
+    if (game.config.mode === "VIP_ESCORT") {
+      if (hider.hiderRole === "VIP") {
+        hider.caughtAt = Date.now();
+        await finishGame("SEEKERS");
+        await saveAndEmit();
+        return ack({ ok: true, vipCaught: true });
+      }
+      emitAlert("A decoy was tagged — that wasn't the VIP.");
+      push.sendToMany(seekerIds(game), { title: "Decoy Tagged", body: "You tagged a decoy — that wasn't the VIP.", tag: "decoy" });
+      await saveAndEmit();
+      return ack({ ok: true, decoy: true });
+    }
+
     hider.caughtAt = Date.now();
     const entry = leaderboardEntry(hider);
     game.leaderboard = [
@@ -508,8 +542,16 @@ function applyConfig(payload: AdminConfigPayload) {
       ...rawConfig.proximityThresholds
     }
   };
+  // Mode is chosen during setup and locked once a game is active.
+  const allowedModes: GameMode[] = ["CLASSIC", "VIP_ESCORT", "SAFEHOUSES"];
+  const requestedMode = allowedModes.includes(payload.mode as GameMode) ? (payload.mode as GameMode) : current.mode;
+  const mode = state.game?.phase === "active" ? current.mode : requestedMode;
   const config = {
     ...current,
+    mode,
+    vipObjectiveTarget: Math.round(clampNumber(payload.vipObjectiveTarget, current.vipObjectiveTarget, 1, 50)),
+    safehouseRadius: clampNumber(payload.safehouseRadius, current.safehouseRadius, 10, 500),
+    safehouseCaptureTargetSeconds: Math.round(clampNumber(payload.safehouseCaptureTargetSeconds, current.safehouseCaptureTargetSeconds, 30, 7200)),
     pingIntervalMinutes: clampNumber(payload.pingIntervalMinutes, current.pingIntervalMinutes, 0.1, 30),
     locationDelayMinutes: clampNumber(payload.locationDelayMinutes, current.locationDelayMinutes, 0, 30),
     lockdownIntervalCount: Math.round(clampNumber(payload.lockdownIntervalCount, current.lockdownIntervalCount, 1, 20)),
@@ -578,10 +620,12 @@ async function makeGame(hiders: PlayerInternal[], seekers: PlayerInternal[]): Pr
     };
   });
 
+  // Lockdowns are a classic-mode mechanic; the VIP Escort and Safehouses modes don't use them.
+  const lockdownsEnabled = game.config.mode === "CLASSIC";
   for (const [index, player] of hiders.entries()) {
     const coords = player.coords || offsetCoordinate(state.setup.center, 160 + index * 65, 120 + index * 50);
-    const lockdownCircleGeoJSON = circlePolygon(coords, game.config.lockdownRadius);
-    const lockdownExpiresAt = Date.now() + game.config.lockdownDurationSeconds * 1000;
+    const lockdownCircleGeoJSON = lockdownsEnabled ? circlePolygon(coords, game.config.lockdownRadius) : null;
+    const lockdownExpiresAt = lockdownsEnabled ? Date.now() + game.config.lockdownDurationSeconds * 1000 : null;
     const legalAreaGeoJSON = legalArea(game.globalSafeZoneGeoJSON, lockdownCircleGeoJSON);
     const hider: HiderState = {
       playerId: player.id,
@@ -614,13 +658,147 @@ async function makeGame(hiders: PlayerInternal[], seekers: PlayerInternal[]): Pr
       oobSamples: 0,
       claims: []
     };
-    scheduleNextLockdown(hider, game, startedAt + lockdownCycleMs(game));
+    if (lockdownsEnabled) scheduleNextLockdown(hider, game, startedAt + lockdownCycleMs(game));
     game.hiders[player.id] = hider;
+  }
+
+  await applyModeSetup(game);
+  return game;
+}
+
+const SAFEHOUSE_IDS = ["alpha", "bravo", "charlie"];
+const SAFEHOUSE_LABELS = ["Alpha", "Bravo", "Charlie"];
+
+// Per-mode setup run once at game start: assign objectives (classic), pick the VIP and
+// anonymization labels (VIP Escort), or auto-select the three safehouses (Safehouses).
+async function applyModeSetup(game: GameState) {
+  const hiders = Object.values(game.hiders);
+  if (!hiders.length) return;
+
+  if (game.config.mode === "VIP_ESCORT") {
+    // Stable "Target N" pseudonyms (seeker anonymization), in a deterministic order.
+    hiderIdsSorted(game).forEach((playerId, index) => {
+      game.hiders[playerId].targetLabel = `Target ${index + 1}`;
+    });
+    // One random hider becomes the VIP; everyone else is a bodyguard/decoy.
+    const vipIndex = Math.floor(Math.random() * hiders.length);
+    hiders.forEach((hider, index) => {
+      hider.hiderRole = index === vipIndex ? "VIP" : "BODYGUARD";
+      hider.activeObjectives = [];
+    });
+    const vip = hiders[vipIndex];
+    await assignRegularObjective(vip, game);
+    await syncHiderObjectives(vip, game);
+    return;
+  }
+
+  if (game.config.mode === "SAFEHOUSES") {
+    game.safehouses = await selectSafehouses(game);
+    game.totalCaptureSeconds = 0;
+    for (const hider of hiders) hider.activeObjectives = [];
+    return;
+  }
+
+  // CLASSIC — every hider gets their own objective.
+  for (const hider of hiders) {
     await assignRegularObjective(hider, game);
     await syncHiderObjectives(hider, game);
   }
+}
 
-  return game;
+// Auto-select three distinct landmarks inside the play zone from the existing POI sources
+// (Overpass cache → PostGIS → fallback list), spaced apart, and wrap each in a circle polygon.
+async function selectSafehouses(game: GameState): Promise<Safehouse[]> {
+  const zone = game.globalSafeZoneGeoJSON;
+  const radius = game.config.safehouseRadius;
+  const candidates: Objective[] = [];
+  const seen = new Set<string>();
+  const add = (obj: Objective | null | undefined) => {
+    if (!obj || seen.has(obj.id) || !containsPoint(zone, obj.coordinates)) return;
+    seen.add(obj.id);
+    candidates.push(obj);
+  };
+  for (const obj of overpass.getCached(zone)) add(obj);
+  if (db.enabled && candidates.length < 12) {
+    for (let attempt = 0; attempt < 60 && candidates.length < 24; attempt += 1) {
+      add(await db.findObjectiveInside(zone, OBJECTIVE_CATEGORIES, Math.floor(Math.random() * 1000) + attempt));
+    }
+  }
+  for (const obj of FALLBACK_OBJECTIVES) add(obj);
+
+  const shuffled = candidates.sort(() => Math.random() - 0.5);
+  const chosen: Objective[] = [];
+  const minSpacing = Math.max(120, radius * 2);
+  for (const spacing of [minSpacing, 0]) {
+    for (const obj of shuffled) {
+      if (chosen.length >= 3) break;
+      if (chosen.some(c => c.id === obj.id)) continue;
+      if (chosen.every(c => distanceMeters(c.coordinates, obj.coordinates) >= spacing)) chosen.push(obj);
+    }
+    if (chosen.length >= 3) break;
+  }
+
+  return chosen.slice(0, 3).map((objective, index) => ({
+    id: SAFEHOUSE_IDS[index],
+    label: SAFEHOUSE_LABELS[index],
+    objective,
+    center: objective.coordinates,
+    circleGeoJSON: circlePolygon(objective.coordinates, radius),
+    state: "idle" as SafehouseState
+  }));
+}
+
+function findVip(game: GameState): HiderState | null {
+  return Object.values(game.hiders).find(hider => hider.hiderRole === "VIP") || null;
+}
+
+function hiderIdsSorted(game: GameState): string[] {
+  return Object.keys(game.hiders).sort();
+}
+
+function seekerIds(game: GameState): string[] {
+  return Object.keys(game.seekers);
+}
+
+// Lightweight one-shot toast broadcast to every connected client (seekers + hiders + admin).
+function emitAlert(text: string) {
+  io.emit("game_alert", { text });
+}
+
+// Recompute safehouse occupancy from live coordinates each tick. Returns true when the shared
+// capture target is reached (Hider victory). Fires breach/secure alerts on state transitions.
+function updateSafehouses(game: GameState): boolean {
+  if (!game.safehouses?.length) return false;
+  const hiders = Object.values(game.hiders).filter(hider => !hider.caughtAt && !hider.isOutOfBounds);
+  const seekers = Object.values(game.seekers);
+  const liveCoordsFor = (playerId: string) => state.players[playerId]?.coords || null;
+  let anyBreached = false;
+  for (const safehouse of game.safehouses) {
+    const hidersInside = hiders.some(hider => {
+      const coords = liveCoordsFor(hider.playerId);
+      return !!coords && containsPoint(safehouse.circleGeoJSON, coords);
+    });
+    const seekersInside = seekers.some(seeker => {
+      const coords = liveCoordsFor(seeker.playerId);
+      return !!coords && containsPoint(safehouse.circleGeoJSON, coords);
+    });
+    const next: SafehouseState = hidersInside && seekersInside ? "contested" : hidersInside ? "breached" : "idle";
+    if (next !== safehouse.state) {
+      if (next === "breached" && safehouse.state === "idle") {
+        emitAlert(`Safehouse ${safehouse.label} is being breached!`);
+        push.sendToMany(seekerIds(game), { title: "Safehouse Breach", body: `Safehouse ${safehouse.label} is being breached!`, tag: "safehouse" });
+      } else if (next === "idle") {
+        emitAlert(`Safehouse ${safehouse.label} is secure.`);
+        push.sendToMany(seekerIds(game), { title: "Safehouse Secure", body: `Safehouse ${safehouse.label} is secure.`, tag: "safehouse" });
+      }
+      safehouse.state = next;
+    }
+    if (next === "breached") anyBreached = true;
+  }
+  // Anti-stacking: at most 1 second of capture per elapsed second, regardless of how many
+  // hiders or safehouses are breached.
+  if (anyBreached) game.totalCaptureSeconds = (game.totalCaptureSeconds || 0) + 1;
+  return (game.totalCaptureSeconds || 0) >= game.config.safehouseCaptureTargetSeconds;
 }
 
 function ensurePlayerInActiveGame(player: PlayerInternal, game: GameState) {
@@ -682,7 +860,7 @@ async function recomputeDerived() {
       hider.lockdownTravelStartedAt ||= Date.now();
     }
     normalizeHiderState(hider);
-    if (!hider.nextLockdownCircleGeoJSON || !hider.nextLockdownStartsAt) {
+    if (game.config.mode === "CLASSIC" && (!hider.nextLockdownCircleGeoJSON || !hider.nextLockdownStartsAt)) {
       scheduleNextLockdown(hider, game, Date.now() + lockdownCycleMs(game));
     }
     expireLockdownObjectives(hider);
@@ -712,23 +890,35 @@ function gameSecondsRemaining(game: GameState): number | null {
 async function boundaryTick() {
   const game = state.game;
   if (!game || game.phase !== "active" || game.paused) return;
-  // Time limit reached with hiders still free → the hiders survived and win.
+  // Time limit reached. In classic/VIP the hiders survived and win; in Safehouses the hiders
+  // failed to bank enough capture time, so the seekers win.
   if (gameSecondsRemaining(game) === 0) {
+    await finishGame(game.config.mode === "SAFEHOUSES" ? "SEEKERS" : "HIDERS");
+    await saveAndEmit();
+    return;
+  }
+  // Safehouses: accumulate shared capture time and fire breach/secure alerts.
+  if (game.config.mode === "SAFEHOUSES" && updateSafehouses(game)) {
     await finishGame("HIDERS");
     await saveAndEmit();
     return;
   }
-  game.shrinkCountdown -= 1;
-  if (game.shrinkCountdown <= 0) {
-    game.globalSafeZoneGeoJSON = shrinkGlobalZone(
-      game.globalSafeZoneGeoJSON,
-      Object.values(game.seekers),
-      game.config.globalSqueezePercentage
-    );
-    for (const hider of Object.values(game.hiders)) {
-      hider.legalAreaGeoJSON = legalArea(game.globalSafeZoneGeoJSON, hider.lockdownCircleGeoJSON);
+  // Safehouses are FIXED landmarks, so shrinking the zone past one would make it permanently
+  // uncapturable (a hider on it reads as out-of-bounds). The global shrink is a classic/VIP
+  // pressure mechanic only.
+  if (game.config.mode !== "SAFEHOUSES") {
+    game.shrinkCountdown -= 1;
+    if (game.shrinkCountdown <= 0) {
+      game.globalSafeZoneGeoJSON = shrinkGlobalZone(
+        game.globalSafeZoneGeoJSON,
+        Object.values(game.seekers),
+        game.config.globalSqueezePercentage
+      );
+      for (const hider of Object.values(game.hiders)) {
+        hider.legalAreaGeoJSON = legalArea(game.globalSafeZoneGeoJSON, hider.lockdownCircleGeoJSON);
+      }
+      game.shrinkCountdown = game.config.shrinkIntervalSeconds;
     }
-    game.shrinkCountdown = game.config.shrinkIntervalSeconds;
   }
   await recomputeDerived();
   await saveAndEmit();
@@ -742,7 +932,7 @@ async function seekerPingTick() {
   lastSeekerPingAt = Date.now();
   for (const hider of Object.values(game.hiders)) {
     hider.pingCount += 1;
-    if (hider.pingCount % game.config.lockdownIntervalCount === 0) {
+    if (game.config.mode === "CLASSIC" && hider.pingCount % game.config.lockdownIntervalCount === 0) {
       const lockdownCircle = hider.nextLockdownCircleGeoJSON || forecastLockdownCircle(hider, game);
       hider.lockdownCircleGeoJSON = lockdownCircle;
       hider.lastLockdownCircleGeoJSON = lockdownCircle;
@@ -784,58 +974,91 @@ function adminPayload(): AdminStatePayload {
 }
 
 function hiderPayload(playerId: string): HiderStatusPayload {
-  const hider = state.game?.hiders[playerId] || null;
+  const game = state.game;
+  const hider = game?.hiders[playerId] || null;
+  if (!hider || !game) {
+    return { phase: state.phase, roster: roster(), gameId: game?.id || null, me: null };
+  }
+  const mode = game.config.mode;
+  const isVip = mode === "VIP_ESCORT";
+  const isSafehouse = mode === "SAFEHOUSES";
+  const vip = isVip ? findVip(game) : null;
+  const mirror = isVip && hider.hiderRole === "BODYGUARD" && !!vip;
+  // VIP Escort + Safehouses: hiders see their teammates' live positions.
+  const teammates = (isVip || isSafehouse)
+    ? Object.values(game.hiders)
+        .filter(other => other.playerId !== hider.playerId)
+        .map(other => ({ hiderId: other.playerId, name: other.name, hiderRole: other.hiderRole, coordinates: other.coords }))
+    : undefined;
   return {
     phase: state.phase,
     roster: roster(),
-    gameId: state.game?.id || null,
-    me: hider && state.game ? {
+    gameId: game.id,
+    me: {
       hiderId: hider.playerId,
       name: hider.name,
       coordinates: hider.coords,
       proximityStatus: hider.proximityStatus,
-      globalSafeZoneGeoJSON: state.game.globalSafeZoneGeoJSON,
+      globalSafeZoneGeoJSON: game.globalSafeZoneGeoJSON,
       myLockdownCircleGeoJSON: hider.lockdownCircleGeoJSON,
       nextLockdownCircleGeoJSON: hider.nextLockdownCircleGeoJSON,
       lockdownExpiresAt: hider.lockdownExpiresAt,
       nextLockdownStartsAt: hider.nextLockdownStartsAt,
       lockdownTravelStartedAt: hider.lockdownTravelStartedAt,
       legalAreaGeoJSON: hider.legalAreaGeoJSON,
-      activeObjective: hider.activeObjective,
-      activeObjectives: hider.activeObjectives,
+      activeObjective: mirror ? vip!.activeObjective : hider.activeObjective,
+      activeObjectives: mirror ? vip!.activeObjectives : hider.activeObjectives,
       score: hider.score,
       isOutOfBounds: hider.isOutOfBounds,
-      shrinkCountdown: state.game.shrinkCountdown,
-      gameSecondsRemaining: gameSecondsRemaining(state.game),
-      config: state.game.config
-    } : null
+      shrinkCountdown: game.shrinkCountdown,
+      gameSecondsRemaining: gameSecondsRemaining(game),
+      config: game.config,
+      mode,
+      hiderRole: hider.hiderRole,
+      teammates,
+      safehouses: isSafehouse ? game.safehouses : undefined,
+      totalCaptureSeconds: isSafehouse ? (game.totalCaptureSeconds || 0) : undefined,
+      captureTargetSeconds: isSafehouse ? game.config.safehouseCaptureTargetSeconds : undefined
+    }
   };
 }
 
 function seekerPayload(): SeekerPingPayload {
   const game = state.game;
+  const mode = game?.config.mode || "CLASSIC";
+  const isSafehouse = !!game && mode === "SAFEHOUSES";
+  // VIP Escort: every hider is anonymized and shown the SAME (the VIP's) objective so the VIP
+  // is indistinguishable from a bodyguard.
+  const vip = game && mode === "VIP_ESCORT" ? findVip(game) : null;
   return {
     phase: state.phase,
     roster: roster(),
     globalSafeZoneGeoJSON: game?.globalSafeZoneGeoJSON || null,
     gameSecondsRemaining: game ? gameSecondsRemaining(game) : null,
+    mode,
+    safehouses: isSafehouse ? game!.safehouses : undefined,
+    totalCaptureSeconds: isSafehouse ? (game!.totalCaptureSeconds || 0) : undefined,
+    captureTargetSeconds: isSafehouse ? game!.config.safehouseCaptureTargetSeconds : undefined,
     seekers: game ? Object.values(game.seekers).map(s => ({ playerId: s.playerId, name: s.name, coordinates: s.coords })) : [],
-    hiders: game ? Object.values(game.hiders).map(h => ({
-      hiderId: h.playerId,
-      name: h.name,
-      delayedCoordinates: h.delayedCoordinates,
-      delayedTrail: delayedTrail(h.history, game.config.locationDelayMinutes, 120),
-      timestampOfCapture: h.timestampOfCapture,
-      lockdownCircleGeoJSON: h.lockdownCircleGeoJSON,
-      nextLockdownCircleGeoJSON: null,
-      activeObjective: {
-        id: h.activeObjective.id,
-        name: h.activeObjective.name,
-        category: h.activeObjective.category,
-        coordinates: h.activeObjective.coordinates
-      },
-      activeObjectives: h.activeObjectives
-    })) : []
+    hiders: game ? Object.values(game.hiders).map(h => {
+      const obj = (vip || h).activeObjective;
+      return {
+        hiderId: h.playerId,
+        name: vip ? (h.targetLabel || "Target") : h.name,
+        delayedCoordinates: h.delayedCoordinates,
+        delayedTrail: delayedTrail(h.history, game.config.locationDelayMinutes, 120),
+        timestampOfCapture: h.timestampOfCapture,
+        lockdownCircleGeoJSON: h.lockdownCircleGeoJSON,
+        nextLockdownCircleGeoJSON: null,
+        activeObjective: {
+          id: obj.id,
+          name: obj.name,
+          category: obj.category,
+          coordinates: obj.coordinates
+        },
+        activeObjectives: vip ? vip.activeObjectives : h.activeObjectives
+      };
+    }) : []
   };
 }
 
@@ -858,6 +1081,18 @@ function normalizeHiderState(hider: HiderState) {
 }
 
 async function syncHiderObjectives(hider: HiderState, game: GameState) {
+  // Safehouses: the three safehouses are the only objectives — hiders hold no personal slot.
+  if (game.config.mode === "SAFEHOUSES") {
+    hider.activeObjectives = [];
+    return;
+  }
+  // VIP Escort: only the VIP carries objectives; bodyguards mirror the VIP's current target.
+  if (game.config.mode === "VIP_ESCORT" && hider.hiderRole === "BODYGUARD") {
+    hider.activeObjectives = [];
+    const vip = findVip(game);
+    if (vip) hider.activeObjective = vip.activeObjective;
+    return;
+  }
   normalizeHiderState(hider);
   expireLockdownObjectives(hider);
   const regular = hider.activeObjectives.find(slot => slot.kind === "regular");

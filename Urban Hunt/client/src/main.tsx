@@ -12,6 +12,7 @@ import type {
   AdminStatePayload,
   GameHistoryEntry,
   GameConfig,
+  GameMode,
   HiderStatusPayload,
   JoinGamePayload,
   LeaderboardEntry,
@@ -20,6 +21,7 @@ import type {
   ObjectiveSlot,
   PlayerPublic,
   Role,
+  Safehouse,
   SeekerPingPayload
 } from "@shared/types";
 
@@ -43,7 +45,23 @@ const DEFAULT_CONFIG: GameConfig = {
   regularObjectivePoints: 1,
   lockdownObjectivePoints: 2,
   proximityThresholds: { near: 200, far: 1000 },
-  claimRadius: 40
+  claimRadius: 40,
+  mode: "CLASSIC",
+  vipObjectiveTarget: 5,
+  safehouseRadius: 40,
+  safehouseCaptureTargetSeconds: 600
+};
+
+const MODE_LABELS: Record<GameMode, string> = {
+  CLASSIC: "Classic",
+  VIP_ESCORT: "VIP Escort",
+  SAFEHOUSES: "Safehouses"
+};
+
+const MODE_HINTS: Record<GameMode, string> = {
+  CLASSIC: "Hiders complete objectives in a shrinking zone; seekers chase a delayed trail.",
+  VIP_ESCORT: "One secret VIP; the rest are decoys. Only the VIP scores. Catch the VIP to win.",
+  SAFEHOUSES: "Hold any of 3 safehouses uncontested to bank shared capture time and win."
 };
 
 type GameOverState = {
@@ -164,6 +182,10 @@ function App() {
       // Admin issued "Reset Everything" — send non-admin clients back to the home screen.
       if (roleRef.current !== "ADMIN") leaveRef.current();
     };
+    const onGameAlert = (payload: { text?: string }) => {
+      if (payload?.text) setMessage(payload.text);
+    };
+    socket.on("game_alert", onGameAlert);
     socket.on("force_reset", onForceReset);
     socket.on("state_admin", onStateAdmin);
     socket.on("status_update", onStatusUpdate);
@@ -176,6 +198,7 @@ function App() {
     socket.on("connect", onConnect);
     return () => {
       socket.off("connect", onConnect);
+      socket.off("game_alert", onGameAlert);
       socket.off("force_reset", onForceReset);
       socket.off("state_admin", onStateAdmin);
       socket.off("status_update", onStatusUpdate);
@@ -495,6 +518,15 @@ function AdminView({ payload, roster, message, setMessage, onLeave }: {
         </div>
         <div className="mono">{mapPickMode === "center" ? "Tap the map to place the zone origin pin." : "Tap the map to set the radius from the current origin."}</div>
       </div>}
+      {isSetup && <div className="card">
+        <div className="card-title">Game Mode</div>
+        <div className="controls" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+          {(Object.keys(MODE_LABELS) as GameMode[]).map(m => (
+            <button key={m} className={`btn${(config.mode || "CLASSIC") === m ? " primary" : ""}`} onClick={() => update({ mode: m })}>{MODE_LABELS[m]}</button>
+          ))}
+        </div>
+        <div className="mono">{MODE_HINTS[config.mode || "CLASSIC"]}</div>
+      </div>}
       <Settings config={config} onChange={update} />
       <Roster roster={roster} />
       {payload?.phase === "active" && game ? <Controls setMessage={setMessage} /> : <div className="controls">
@@ -531,6 +563,10 @@ function HiderView({ payload, message, onLeave, claimOpen, setClaimOpen, selecte
   confirmCaught: () => void;
 }) {
   const me = payload?.me;
+  const mode = me?.mode || "CLASSIC";
+  const isVip = mode === "VIP_ESCORT";
+  const isBodyguard = isVip && me?.hiderRole === "BODYGUARD";
+  const isSafehouse = mode === "SAFEHOUSES";
   const [caughtUntil, setCaughtUntil] = useState(0);
   const selectedDistance = me && selectedSlot ? distanceMeters(me.coordinates, selectedSlot.objective.coordinates) : Infinity;
   const selectedInRange = !!me && selectedDistance <= me.config.claimRadius;
@@ -566,18 +602,27 @@ function HiderView({ payload, message, onLeave, claimOpen, setClaimOpen, selecte
         <div className="score-card row"><span className="kicker">score</span><strong>{me.score}</strong></div>
         {lockdownTimer && <Timer label={lockdownTimer.label} seconds={lockdownTimer.seconds} total={lockdownTimer.total} />}
         {me.nextLockdownCircleGeoJSON && <div className="lockdown row"><span className="kicker">next lockdown</span><span className="mono">{me.nextLockdownStartsAt ? formatTime((me.nextLockdownStartsAt - now) / 1000) : "forecast"}</span></div>}
-        {objectives.map(slot => {
+        {isVip && <div className={`card soft text-center role-banner role-${me.hiderRole}`}>
+          <div className="kicker">your assignment</div>
+          <div className="role-big">{me.hiderRole === "VIP" ? "VIP" : "BODYGUARD"}</div>
+          <div className="mono">{me.hiderRole === "VIP" ? "Clear objectives. Stay alive." : "Escort the VIP and draw the seekers away."}</div>
+        </div>}
+        {isSafehouse && <SafehousePanel safehouses={me.safehouses} />}
+        {isSafehouse && <CaptureCounter seconds={me.totalCaptureSeconds} target={me.captureTargetSeconds} />}
+        {!isSafehouse && objectives.map(slot => {
           const dist = distanceMeters(me.coordinates, slot.objective.coordinates);
-          const inRange = dist <= me.config.claimRadius && !me.isOutOfBounds;
+          const inRange = dist <= me.config.claimRadius && !me.isOutOfBounds && !isBodyguard;
           return <div key={slot.slotId} className={`objective ${slot.kind}`}>
-            <div className="row"><span className="kicker">{slot.kind === "lockdown" ? "lockdown objective" : "active objective"}</span><span className="mono">{Math.round(dist)}m / {slot.scoreValue}pt</span></div>
+            <div className="row"><span className="kicker">{isBodyguard ? "vip target" : slot.kind === "lockdown" ? "lockdown objective" : "active objective"}</span><span className="mono">{Math.round(dist)}m / {slot.scoreValue}pt</span></div>
             <div className="player-name">{slot.objective.name}</div>
             <div className="row"><span className="mono">{slot.objective.category}</span>{slot.expiresAt && <span className="mono">{formatTime((slot.expiresAt - Date.now()) / 1000)}</span>}</div>
-            <button className={`btn ${inRange ? "primary" : ""}`} disabled={!inRange} onClick={() => openClaim(slot)}>{me.isOutOfBounds ? "Out Of Bounds" : inRange ? "Claim Objective" : "Move Closer"}</button>
+            {isBodyguard
+              ? <button className="btn" disabled>Escort the VIP</button>
+              : <button className={`btn ${inRange ? "primary" : ""}`} disabled={!inRange} onClick={() => openClaim(slot)}>{me.isOutOfBounds ? "Out Of Bounds" : inRange ? "Claim Objective" : "Move Closer"}</button>}
           </div>;
         })}
         <button className={`btn danger ${caughtArmed ? "armed" : ""}`} onClick={caughtClick}>{caughtText}</button>
-        <Timer label="zone shrink" seconds={me.shrinkCountdown} total={me.config.shrinkIntervalSeconds} /></>}
+        {!isSafehouse && <Timer label="zone shrink" seconds={me.shrinkCountdown} total={me.config.shrinkIntervalSeconds} />}</>}
       </div>
       {claimOpen && me && selectedSlot && <div className="claim-sheet">
         <div className="row"><div><div className="sheet-title">Claim Objective</div><div className="mono">{selectedSlot.objective.name}</div></div><button className="close" onClick={() => { setClaimOpen(false); setSelectedSlot(null); }}>x</button></div>
@@ -596,8 +641,10 @@ function SeekerView({ payload, message, onLeave }: { payload: SeekerPingPayload 
       <div className="panel">
         {message && <div className="notice">{message}</div>}
         {payload && payload.gameSecondsRemaining != null && <div className="row"><span className="kicker">time left</span><span className="time">{formatTime(payload.gameSecondsRemaining)}</span></div>}
+        {payload?.mode === "SAFEHOUSES" && <SafehousePanel safehouses={payload.safehouses} />}
+        {payload?.mode === "SAFEHOUSES" && <CaptureCounter seconds={payload.totalCaptureSeconds} target={payload.captureTargetSeconds} />}
         <div className="kicker">hider signals</div>
-        {payload?.hiders.map(h => <div key={h.hiderId} className="ping"><div><div className="player-name">{h.name}</div><div className="mono">captured {new Date(h.timestampOfCapture).toLocaleTimeString()}</div></div><div className="mono">{(h.activeObjectives || []).map(slot => `${slot.objective.name} ${slot.scoreValue}pt`).join(" / ") || h.activeObjective.name}</div></div>)}
+        {payload?.hiders.map(h => <div key={h.hiderId} className="ping"><div><div className="player-name">{h.name}</div><div className="mono">captured {new Date(h.timestampOfCapture).toLocaleTimeString()}</div></div>{payload?.mode !== "SAFEHOUSES" && <div className="mono">{(h.activeObjectives || []).map(slot => `${slot.objective.name} ${slot.scoreValue}pt`).join(" / ") || h.activeObjective.name}</div>}</div>)}
       </div>
     </div>
   </Shell>;
@@ -678,6 +725,15 @@ function GameMap({ mode, admin, hider, seeker, onSetupCenterPick, onSetupRadiusP
         `${slot.objective.name} (${slot.scoreValue}pt)`
       ));
     };
+    const SAFEHOUSE_COLORS: Record<string, string> = { idle: "#6f7d54", breached: "#c0473a", contested: "#d9a520" };
+    const addSafehouses = (list: Safehouse[] | undefined) => {
+      (list || []).forEach(s => {
+        const color = SAFEHOUSE_COLORS[s.state] || "#6f7d54";
+        const layer = L.geoJSON(s.circleGeoJSON, { style: { color, weight: 2, fillColor: color, fillOpacity: s.state === "idle" ? 0.1 : 0.3, dashArray: s.state === "breached" ? undefined : "6 4" } }).addTo(group);
+        layer.bindTooltip(`Safehouse ${s.label} — ${s.state}`);
+        bounds.push(layer.getBounds());
+      });
+    };
     if (mode === "admin") {
       addGeo(admin?.game?.globalSafeZoneGeoJSON || admin?.setup.globalSafeZoneGeoJSON, "#c2b280");
       if (!admin?.game && admin?.setup) {
@@ -687,7 +743,15 @@ function GameMap({ mode, admin, hider, seeker, onSetupCenterPick, onSetupRadiusP
         }).addTo(group).bindTooltip("Zone origin");
         bounds.push(L.latLngBounds([c[1], c[0]], [c[1], c[0]]));
       }
-      admin?.game?.hiders.forEach(h => { addGeo(h.nextLockdownCircleGeoJSON, "#4da3c7", { fillOpacity: 0.03, dashArray: "2 8" }); addGeo(h.lockdownCircleGeoJSON, "#d9a520"); addMarker(h.coords, "#c2b280", h.name); addObjectiveSlots(h.activeObjectives, h.activeObjective); });
+      addSafehouses(admin?.game?.safehouses);
+      const adminHasObjectives = admin?.game?.config.mode !== "SAFEHOUSES";
+      admin?.game?.hiders.forEach(h => {
+        addGeo(h.nextLockdownCircleGeoJSON, "#4da3c7", { fillOpacity: 0.03, dashArray: "2 8" });
+        addGeo(h.lockdownCircleGeoJSON, "#d9a520");
+        const isVip = h.hiderRole === "VIP";
+        addMarker(h.coords, isVip ? "#d9a520" : "#c2b280", isVip ? `${h.name} (VIP)` : h.hiderRole === "BODYGUARD" ? `${h.name} (decoy)` : h.name);
+        if (adminHasObjectives) addObjectiveSlots(h.activeObjectives, h.activeObjective);
+      });
       admin?.game?.seekers.forEach(s => addMarker(s.coords, "#c0473a", s.name));
     }
     if (mode === "hider" && hider?.me) {
@@ -695,13 +759,16 @@ function GameMap({ mode, admin, hider, seeker, onSetupCenterPick, onSetupRadiusP
       addGeo(hider.me.nextLockdownCircleGeoJSON, "#4da3c7", { fillOpacity: 0.03, dashArray: "2 8" });
       addGeo(hider.me.myLockdownCircleGeoJSON, "#d9a520");
       addGeo(hider.me.legalAreaGeoJSON, "#a7c24d");
+      addSafehouses(hider.me.safehouses);
+      (hider.me.teammates || []).forEach(t => addMarker(t.coordinates, t.hiderRole === "VIP" ? "#d9a520" : "#4da3c7", t.hiderRole === "VIP" ? `${t.name} (VIP)` : t.name));
       addMarker(hider.me.coordinates, "#c2b280", "you");
-      addObjectiveSlots(hider.me.activeObjectives, hider.me.activeObjective);
+      if (!hider.me.safehouses?.length) addObjectiveSlots(hider.me.activeObjectives, hider.me.activeObjective);
     }
     if (mode === "seeker" && seeker) {
       addGeo(seeker.globalSafeZoneGeoJSON, "#c2b280");
+      addSafehouses(seeker.safehouses);
       seeker.seekers.forEach(s => addMarker(s.coordinates, "#c0473a", s.name));
-      seeker.hiders.forEach(h => { addGeo(h.lockdownCircleGeoJSON, "#d9a520"); addLine(h.delayedTrail, "#c2b280"); addMarker(h.delayedCoordinates, "#c2b280", h.name); addObjectiveSlots(h.activeObjectives, h.activeObjective); });
+      seeker.hiders.forEach(h => { addGeo(h.lockdownCircleGeoJSON, "#d9a520"); addLine(h.delayedTrail, "#c2b280"); addMarker(h.delayedCoordinates, "#c2b280", h.name); if (seeker.mode !== "SAFEHOUSES") addObjectiveSlots(h.activeObjectives, h.activeObjective); });
     }
     const combined = bounds.reduce<L.LatLngBounds | null>((acc, b) => acc ? acc.extend(b) : b, null);
     if (!userChangedViewport.current) {
@@ -766,8 +833,9 @@ function mapContentSignature(
       return JSON.stringify([
         "admin-game",
         game.globalSafeZoneGeoJSON,
-        game.hiders.map(h => [h.coords, h.lockdownCircleGeoJSON, h.nextLockdownCircleGeoJSON, slots(h.activeObjectives, h.activeObjective?.id, h.activeObjective?.coordinates)]),
-        game.seekers.map(s => s.coords)
+        game.hiders.map(h => [h.coords, h.lockdownCircleGeoJSON, h.nextLockdownCircleGeoJSON, h.hiderRole, slots(h.activeObjectives, h.activeObjective?.id, h.activeObjective?.coordinates)]),
+        game.seekers.map(s => s.coords),
+        game.safehouses?.map(s => [s.id, s.state])
       ]);
     }
     return JSON.stringify(["admin-setup", admin?.setup.center, admin?.setup.globalSafeZoneGeoJSON]);
@@ -776,12 +844,15 @@ function mapContentSignature(
     const me = hider?.me;
     return JSON.stringify(me ? [
       "hider", me.coordinates, me.globalSafeZoneGeoJSON, me.myLockdownCircleGeoJSON, me.nextLockdownCircleGeoJSON, me.legalAreaGeoJSON,
+      me.hiderRole, me.safehouses?.map(s => [s.id, s.state]), (me.teammates || []).map(t => [t.coordinates, t.hiderRole]),
       slots(me.activeObjectives, me.activeObjective?.id, me.activeObjective?.coordinates)
     ] : ["hider-empty"]);
   }
   return JSON.stringify([
     "seeker",
+    seeker?.mode,
     seeker?.globalSafeZoneGeoJSON,
+    (seeker?.safehouses || []).map(s => [s.id, s.state]),
     (seeker?.seekers || []).map(s => s.coordinates),
     (seeker?.hiders || []).map(h => [h.delayedCoordinates, h.delayedTrail, h.lockdownCircleGeoJSON, slots(h.activeObjectives, h.activeObjective?.id, h.activeObjective?.coordinates)])
   ]);
@@ -801,6 +872,31 @@ function Settings({ config, onChange }: { config: GameConfig; onChange: (payload
     <Range label="Lockdown duration" value={config.lockdownDurationSeconds} min={10} max={3600} step={10} unit="s" onChange={lockdownDurationSeconds => onChange({ lockdownDurationSeconds })} />
     <Range label="Regular objective points" value={config.regularObjectivePoints} min={1} max={20} step={1} unit="pt" onChange={regularObjectivePoints => onChange({ regularObjectivePoints })} />
     <Range label="Lockdown objective points" value={config.lockdownObjectivePoints} min={1} max={40} step={1} unit="pt" onChange={lockdownObjectivePoints => onChange({ lockdownObjectivePoints })} />
+    {config.mode === "VIP_ESCORT" && <Range label="VIP objectives to win" value={config.vipObjectiveTarget} min={1} max={20} step={1} unit="" onChange={vipObjectiveTarget => onChange({ vipObjectiveTarget })} />}
+    {config.mode === "SAFEHOUSES" && <Range label="Safehouse radius" value={config.safehouseRadius} min={10} max={500} step={5} unit="m" onChange={safehouseRadius => onChange({ safehouseRadius })} />}
+    {config.mode === "SAFEHOUSES" && <Range label="Capture time to win" value={config.safehouseCaptureTargetSeconds} min={30} max={3600} step={30} unit="s" onChange={safehouseCaptureTargetSeconds => onChange({ safehouseCaptureTargetSeconds })} />}
+  </div>;
+}
+
+function SafehousePanel({ safehouses }: { safehouses: Safehouse[] | undefined }) {
+  if (!safehouses?.length) return null;
+  return <div className="card"><div className="card-title">Safehouses</div>
+    <div className="roster">
+      {safehouses.map(s => <div key={s.id} className={`safehouse-row sh-${s.state}`}>
+        <span className="player-name">{s.label}</span>
+        <span className="mono">{s.objective.name}</span>
+        <span className={`sh-state sh-${s.state}`}>{s.state}</span>
+      </div>)}
+    </div>
+  </div>;
+}
+
+function CaptureCounter({ seconds, target }: { seconds: number | undefined; target: number | undefined }) {
+  if (seconds == null || !target) return null;
+  const pct = Math.min(100, Math.max(0, (seconds / target) * 100));
+  return <div className="timer timer-stack capture-counter">
+    <div className="row"><span className="kicker">group capture time</span><span className="time">{formatTime(seconds)} / {formatTime(target)}</span></div>
+    <div className="bar"><div className="fill" style={{ width: `${pct}%` }} /></div>
   </div>;
 }
 
@@ -924,7 +1020,9 @@ function claimErrorText(error: string) {
     photo_too_large: "photo is too large",
     too_far_from_objective: "you are too far from the objective",
     out_of_bounds: "return inside the play zone before claiming",
-    objective_changed: "objective changed; reopen the claim sheet"
+    objective_changed: "objective changed; reopen the claim sheet",
+    not_vip: "only the VIP can claim objectives in this mode",
+    no_objectives: "this mode has no claimable objectives"
   };
   return labels[error] || error;
 }

@@ -16,6 +16,7 @@
     "import:pois": "tsx --env-file-if-exists=.env scripts/import-geojson.ts",
     "test": "vitest run",
     "test:smoke": "tsx test/socket-smoke.ts",
+    "test:modes": "tsx test/modes-smoke.ts",
     "native:sync": "npm run build && cap sync",
     "native:android": "cap open android",
     "native:ios": "cap open ios"

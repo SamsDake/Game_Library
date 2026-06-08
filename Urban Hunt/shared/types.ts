@@ -5,6 +5,10 @@ export type GamePhase = "setup" | "active" | "ended";
 export type ProximityStatus = "Near" | "Far" | "Distant";
 export type ClaimStatus = "accepted" | "disallowed";
 
+export type GameMode = "CLASSIC" | "VIP_ESCORT" | "SAFEHOUSES";
+export type HiderTeamRole = "VIP" | "BODYGUARD";
+export type SafehouseState = "idle" | "breached" | "contested";
+
 export type LngLat = [number, number];
 
 export interface GameConfig {
@@ -26,6 +30,10 @@ export interface GameConfig {
     far: number;
   };
   claimRadius: number;
+  mode: GameMode;
+  vipObjectiveTarget: number;
+  safehouseRadius: number;
+  safehouseCaptureTargetSeconds: number;
 }
 
 export interface PlayerPublic {
@@ -100,6 +108,8 @@ export interface HiderState {
   isOutOfBounds: boolean;
   oobSamples: number;
   claims: ClaimRecord[];
+  hiderRole?: HiderTeamRole;
+  targetLabel?: string;
 }
 
 export interface SeekerState {
@@ -143,6 +153,15 @@ export interface GameHistoryEntry {
   claims: ClaimRecord[];
 }
 
+export interface Safehouse {
+  id: string;
+  label: string;
+  objective: Objective;
+  center: LngLat;
+  circleGeoJSON: Feature<Polygon>;
+  state: SafehouseState;
+}
+
 export interface GameState {
   id: string;
   phase: GamePhase;
@@ -157,6 +176,8 @@ export interface GameState {
   claims: ClaimRecord[];
   oobCount: number;
   paused: boolean;
+  safehouses?: Safehouse[];
+  totalCaptureSeconds?: number;
 }
 
 export interface SetupState {
@@ -213,6 +234,10 @@ export interface AdminConfigPayload {
     far?: number;
   };
   claimRadius?: number;
+  mode?: GameMode;
+  vipObjectiveTarget?: number;
+  safehouseRadius?: number;
+  safehouseCaptureTargetSeconds?: number;
 }
 
 export interface SeekerPingPayload {
@@ -220,6 +245,10 @@ export interface SeekerPingPayload {
   roster: PlayerPublic[];
   globalSafeZoneGeoJSON: Feature<Polygon> | null;
   gameSecondsRemaining: number | null;
+  mode: GameMode;
+  safehouses?: Safehouse[];
+  totalCaptureSeconds?: number;
+  captureTargetSeconds?: number;
   seekers: Array<{ playerId: string; name: string; coordinates: LngLat }>;
   hiders: Array<{
     hiderId: string;
@@ -262,6 +291,12 @@ export interface HiderStatusPayload {
     shrinkCountdown: number;
     gameSecondsRemaining: number | null;
     config: GameConfig;
+    mode: GameMode;
+    hiderRole?: HiderTeamRole;
+    teammates?: Array<{ hiderId: string; name: string; hiderRole?: HiderTeamRole; coordinates: LngLat }>;
+    safehouses?: Safehouse[];
+    totalCaptureSeconds?: number;
+    captureTargetSeconds?: number;
   } | null;
 }
 

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const clientDir = path.dirname(fileURLToPath(import.meta.url));
 const target = "http://127.0.0.1:3000";
-const appBasePath = globalThis.process?.env.APP_BASE_PATH || "/";
+const appBasePath = globalThis.process?.env.APP_BASE_PATH || "./";
 
 // Proxy entry with an error handler so transient upstream resets (server still
 // starting, Socket.IO reconnects/upgrades) don't crash the dev server with an
