@@ -248,7 +248,8 @@ function sendDiscordWebhook(title, text, to) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
   }, (res) => {
-    if (res.statusCode >= 300) console.log(`[discord] webhook returned ${res.statusCode}`);
+    if (res.statusCode >= 300) console.log(`[discord] webhook FAILED (status ${res.statusCode}) for: ${title}`);
+    else console.log(`[discord] sent: ${title} (to ${to})`);
   });
   req.on('error', (err) => console.log(`[discord] webhook error: ${err.message}`));
   req.end(payload);
