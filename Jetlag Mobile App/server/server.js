@@ -28,6 +28,10 @@ webpush.setVapidDetails('mailto:admin@comicsams.cloud', vapidKeys.publicKey, vap
 let fcm = null;
 let apns = null;
 
+const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1513567338694447376/OC8ZhE8CzvRedgZ3nxlhY_ODjhE-Nx6gnkne3QrSxhK5SAtUc7TFJkCPUS_VSsLJEgon';
+const DISCORD_HIDERS_MENTION  = '<@&1513568198832951338>';
+const DISCORD_SEEKERS_MENTION = '<@&1513568328612839434>';
+
 // ── State ─────────────────────────────────────────────────────────
 let gameState = null;
 
@@ -221,7 +225,30 @@ function diffAndPush(prev, next) {
       const device = Object.entries(next.roles || {}).find(([, r]) => r === n.to)?.[0];
       if (device) sendPush(device, n.title, n.text);
     }
+    sendDiscordWebhook(n.title, n.text, n.to);
   }
+}
+
+function sendDiscordWebhook(title, text, to) {
+  let mention = '';
+  if (to === 'both') mention = `${DISCORD_HIDERS_MENTION} ${DISCORD_SEEKERS_MENTION} `;
+  else if (to === 'hider') mention = `${DISCORD_HIDERS_MENTION} `;
+  else if (to === 'seeker') mention = `${DISCORD_SEEKERS_MENTION} `;
+
+  const content = `${mention}**${title}** — ${text}`;
+  const payload = JSON.stringify({ content });
+
+  const url = new URL(DISCORD_WEBHOOK_URL);
+  const req = require('https').request({
+    hostname: url.hostname,
+    path: url.pathname + url.search,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+  }, (res) => {
+    if (res.statusCode >= 300) console.log(`[discord] webhook returned ${res.statusCode}`);
+  });
+  req.on('error', (err) => console.log(`[discord] webhook error: ${err.message}`));
+  req.end(payload);
 }
 
 // ── HTTP server (health + push endpoints) ────────────────────────
