@@ -113,6 +113,49 @@ describe("traccar OsmAnd ingest", () => {
         return !!h && Math.abs(h.delayedCoordinates[0] - lon) < 1e-6 && Math.abs(h.delayedCoordinates[1] - lat) < 1e-6;
       });
       expect(seen).toBeTruthy();
+
+      // Simulate the phone app being backgrounded/closed: its socket is gone, but Traccar keeps
+      // posting by player secret. The server must still use that location for admin + seekers.
+      hider.close();
+      await wait(150);
+      const backgroundLon = lon + 0.001;
+      const backgroundLat = lat + 0.001;
+      const backgroundPing = await fetch(`${BASE}/api/traccar?id=${encodeURIComponent(jh.playerSecret)}&lat=${backgroundLat}&lon=${backgroundLon}`);
+      expect(backgroundPing.status).toBe(200);
+
+      await adminStateMatching(admin, s => {
+        const h = s.game.hiders.find((x: any) => x.playerId === jh.playerId);
+        return !!h && Math.abs(h.coords[0] - backgroundLon) < 1e-6 && Math.abs(h.coords[1] - backgroundLat) < 1e-6;
+      });
+      await seekerPingMatching(seeker, p => {
+        const h = p.hiders?.find((x: any) => x.hiderId === jh.playerId);
+        return !!h && Math.abs(h.delayedCoordinates[0] - backgroundLon) < 1e-6 && Math.abs(h.delayedCoordinates[1] - backgroundLat) < 1e-6;
+      });
+
+      // If the app later resumes and flushes an older pending socket coordinate, it must not
+      // overwrite the newer Traccar sample.
+      const resumed = await connect();
+      try {
+        expect((await emitAck<any>(resumed, "join_game", {
+          role: "HIDER",
+          name: "Ghost",
+          playerId: jh.playerId,
+          playerSecret: jh.playerSecret
+        })).ok).toBe(true);
+        const staleAck = await emitAck<any>(resumed, "location_update", {
+          coordinates: [lon, lat],
+          accuracy: 10,
+          timestamp: new Date(Date.now() - 60000).toISOString()
+        });
+        expect(staleAck.ok).toBe(true);
+        const afterStale = await adminStateMatching(admin, s => {
+          const h = s.game.hiders.find((x: any) => x.playerId === jh.playerId);
+          return !!h && Math.abs(h.coords[0] - backgroundLon) < 1e-6 && Math.abs(h.coords[1] - backgroundLat) < 1e-6;
+        });
+        expect(afterStale).toBeTruthy();
+      } finally {
+        resumed.close();
+      }
     } finally {
       admin.close();
       hider.close();

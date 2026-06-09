@@ -178,7 +178,12 @@ app.all("/api/traccar", async (req, res) => {
   }
   player.lastSeen = Date.now();
   const accuracy = Number(params.accuracy);
-  await applyLocationToGame(player, [lon, lat], Number.isFinite(accuracy) ? accuracy : null);
+  await applyLocationToGame(
+    player,
+    [lon, lat],
+    Number.isFinite(accuracy) ? accuracy : null,
+    parseLocationTimestamp(params.timestamp ?? params.time ?? params.fixtime)
+  );
   res.sendStatus(200);
 });
 
@@ -425,7 +430,7 @@ io.on("connection", socket => {
     player.online = true;
     player.sockets = Array.from(new Set([...(player.sockets || []), socket.id]));
 
-    await applyLocationToGame(player, coords, payload.accuracy ?? null);
+    await applyLocationToGame(player, coords, payload.accuracy ?? null, parseLocationTimestamp(payload.timestamp));
     ack({ ok: true });
   });
 
@@ -827,10 +832,12 @@ function activeGameRole(playerId: string): "HIDER" | "SEEKER" | null {
   return null;
 }
 
-async function updateHiderLocation(playerId: string, coords: LngLat): Promise<boolean> {
+async function updateHiderLocation(playerId: string, coords: LngLat, timestamp: number): Promise<boolean> {
   const game = state.game;
   const hider = game?.hiders[playerId];
   if (!game || !hider) return false;
+  const lastTimestamp = hider.history[hider.history.length - 1]?.timestamp || 0;
+  if (timestamp < lastTimestamp) return false;
 
   const insideTrue = containsPoint(game.globalSafeZoneGeoJSON, coords);
   const insideBuffered = containsPointWithBuffer(game.globalSafeZoneGeoJSON, coords, 20);
@@ -846,35 +853,40 @@ async function updateHiderLocation(playerId: string, coords: LngLat): Promise<bo
     hider.isOutOfBounds = false;
     hider.oobSamples = 0;
     hider.coords = coords;
-    hider.history = [...hider.history, { coordinates: coords, timestamp: Date.now() }]
+    hider.history = [...hider.history, { coordinates: coords, timestamp }]
       .filter(item => item.timestamp > Date.now() - 30 * 60 * 1000);
     return true;
   }
   return false;
 }
 
-function updateSeekerLocation(playerId: string, coords: LngLat) {
+function updateSeekerLocation(playerId: string, coords: LngLat, timestamp: number): boolean {
   const seeker = state.game?.seekers[playerId];
-  if (!seeker) return;
+  if (!seeker) return false;
+  const lastTimestamp = seeker.history[seeker.history.length - 1]?.timestamp || 0;
+  if (timestamp < lastTimestamp) return false;
   seeker.coords = coords;
-  seeker.history = [...seeker.history, { coordinates: coords, timestamp: Date.now() }]
+  seeker.history = [...seeker.history, { coordinates: coords, timestamp }]
     .filter(item => item.timestamp > Date.now() - 30 * 60 * 1000);
+  return true;
 }
 
 // Shared by the socket `location_update` handler and the Traccar HTTP ingest so both
 // sources funnel through the identical bounds-check / history / delay / broadcast path.
-async function applyLocationToGame(player: PlayerInternal, coords: LngLat, accuracy: number | null) {
+async function applyLocationToGame(player: PlayerInternal, coords: LngLat, accuracy: number | null, timestamp = Date.now()) {
   if (player.role === "HIDER") {
-    const accepted = await updateHiderLocation(player.id, coords);
+    const accepted = await updateHiderLocation(player.id, coords, timestamp);
     if (accepted) {
       player.coords = coords;
       player.accuracy = accuracy;
     }
   }
   if (player.role === "SEEKER") {
-    player.coords = coords;
-    player.accuracy = accuracy;
-    updateSeekerLocation(player.id, coords);
+    const accepted = updateSeekerLocation(player.id, coords, timestamp);
+    if (accepted) {
+      player.coords = coords;
+      player.accuracy = accuracy;
+    }
   }
   await recomputeDerived();
   await saveAndEmit();
@@ -1463,6 +1475,18 @@ function id(prefix: string) {
 function clampNumber(value: unknown, fallback: number, min: number, max: number) {
   const n = Number(value);
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+}
+
+function parseLocationTimestamp(value: unknown): number {
+  const fallback = Date.now();
+  if (value == null || value === "") return fallback;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    const milliseconds = numeric < 1_000_000_000_000 ? numeric * 1000 : numeric;
+    return Math.min(fallback, Math.max(0, milliseconds));
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? Math.min(fallback, Math.max(0, parsed)) : fallback;
 }
 
 function lockdownCycleMs(game: GameState) {

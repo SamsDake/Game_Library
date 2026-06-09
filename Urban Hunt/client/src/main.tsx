@@ -214,10 +214,18 @@ function App() {
     }
   }, []);
 
+  const locationActive =
+    (role === "HIDER" && hider?.phase === "active" && !!hider.me && !!hider.gameId) ||
+    (role === "SEEKER" && seeker?.phase === "active");
+
   useEffect(() => {
-    if (role === "HIDER" || role === "SEEKER") startLocation();
+    if (locationActive) startLocation();
+    else {
+      stopLocation();
+      clearPendingLocation();
+    }
     return stopLocation;
-  }, [role, hider?.phase, seeker?.phase, demoLocationEnabled]);
+  }, [locationActive, role, hider?.gameId, demoLocationEnabled]);
 
   useEffect(() => {
     stopHeartbeat();
@@ -323,7 +331,8 @@ function App() {
   function startDemoLocation(send: (coords: LngLat, accuracy: number | null) => void) {
     if (geoWatch.current) navigator.geolocation.clearWatch(geoWatch.current);
     geoWatch.current = null;
-    let coords = admin?.setup.center || hider?.me?.coordinates || seeker?.seekers[0]?.coordinates || [-0.0915, 51.5125] as LngLat;
+    const seekerSelf = seeker?.seekers.find(s => s.playerId === playerId);
+    let coords = hider?.me?.coordinates || seekerSelf?.coordinates || admin?.setup.center || [-0.0915, 51.5125] as LngLat;
     demoTimer.current = window.setInterval(() => {
       const target = role === "HIDER" ? hider?.me?.activeObjective.coordinates : seeker?.hiders[0]?.delayedCoordinates;
       if (target) coords = [coords[0] + (target[0] - coords[0]) * 0.04, coords[1] + (target[1] - coords[1]) * 0.04];
