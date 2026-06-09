@@ -4,7 +4,7 @@ import { io, Socket } from "socket.io-client";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
-import { API_BASE_URL, apiUrl, assetUrl, socketIoPath, socketServerUrl } from "./api";
+import { apiUrl, assetUrl, socketIoPath, socketServerUrl } from "./api";
 import { setupPush } from "./push";
 import { canUseNativeLocation, startNativeLocation } from "./native-location";
 import type {
@@ -484,7 +484,7 @@ function Waiting({ role, name, roster, playerSecret, onLeave }: { role: Role | n
 // The player secret doubles as the Traccar "Device identifier" (the server ingests pings at
 // /api/traccar and attributes them by matching this secret).
 function TraccarSetup({ playerSecret }: { playerSecret: string }) {
-  const serverUrl = `${API_BASE_URL || window.location.origin}/api/traccar`;
+  const serverUrl = new URL(apiUrl("/api/traccar"), window.location.origin).href;
   const [copied, setCopied] = useState<string | null>(null);
   const copy = (key: string, value: string) => {
     void navigator.clipboard?.writeText(value);
