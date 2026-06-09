@@ -138,6 +138,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 app.use("/uploads", express.static(UPLOAD_DIR));
 
 app.get("/api/health", (_req, res) => {
@@ -154,6 +155,31 @@ app.get("/api/health", (_req, res) => {
 
 app.get("/api/client-config", (_req, res) => {
   res.json({ ok: true, demoLocationEnabled: DEMO_LOCATION_ENABLED });
+});
+
+// Traccar Client (OsmAnd protocol) background-location ingest. A player runs the Traccar
+// Client app pointed at this URL with their player secret as the "Device identifier", so
+// their position keeps flowing while the Urban Hunt app is backgrounded or closed. Pings
+// feed the same history + delay pipeline as socket location updates.
+app.all("/api/traccar", async (req, res) => {
+  const params = { ...req.query, ...req.body } as Record<string, unknown>;
+  const id = String(params.id ?? params.deviceid ?? "");
+  const lat = Number(params.lat);
+  const lon = Number(params.lon);
+  const player = id ? Object.values(state.players).find(p => p.secret === id) : undefined;
+  if (!player || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+    res.sendStatus(400);
+    return;
+  }
+  // Known device but no live game for them: accept-and-ignore so the client doesn't retry-spam.
+  if (state.game?.phase !== "active" || !activeGameRole(player.id)) {
+    res.sendStatus(200);
+    return;
+  }
+  player.lastSeen = Date.now();
+  const accuracy = Number(params.accuracy);
+  await applyLocationToGame(player, [lon, lat], Number.isFinite(accuracy) ? accuracy : null);
+  res.sendStatus(200);
 });
 
 app.get("/api/history", (_req, res) => {
@@ -399,21 +425,7 @@ io.on("connection", socket => {
     player.online = true;
     player.sockets = Array.from(new Set([...(player.sockets || []), socket.id]));
 
-    if (player.role === "HIDER") {
-      const accepted = await updateHiderLocation(player.id, coords);
-      if (accepted) {
-        player.coords = coords;
-        player.accuracy = payload.accuracy ?? null;
-      }
-    }
-    if (player.role === "SEEKER") {
-      player.coords = coords;
-      player.accuracy = payload.accuracy ?? null;
-      updateSeekerLocation(player.id, coords);
-    }
-
-    await recomputeDerived();
-    await saveAndEmit();
+    await applyLocationToGame(player, coords, payload.accuracy ?? null);
     ack({ ok: true });
   });
 
@@ -847,6 +859,25 @@ function updateSeekerLocation(playerId: string, coords: LngLat) {
   seeker.coords = coords;
   seeker.history = [...seeker.history, { coordinates: coords, timestamp: Date.now() }]
     .filter(item => item.timestamp > Date.now() - 30 * 60 * 1000);
+}
+
+// Shared by the socket `location_update` handler and the Traccar HTTP ingest so both
+// sources funnel through the identical bounds-check / history / delay / broadcast path.
+async function applyLocationToGame(player: PlayerInternal, coords: LngLat, accuracy: number | null) {
+  if (player.role === "HIDER") {
+    const accepted = await updateHiderLocation(player.id, coords);
+    if (accepted) {
+      player.coords = coords;
+      player.accuracy = accuracy;
+    }
+  }
+  if (player.role === "SEEKER") {
+    player.coords = coords;
+    player.accuracy = accuracy;
+    updateSeekerLocation(player.id, coords);
+  }
+  await recomputeDerived();
+  await saveAndEmit();
 }
 
 async function recomputeDerived() {

@@ -4,7 +4,7 @@ import { io, Socket } from "socket.io-client";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
-import { apiUrl, assetUrl, socketIoPath, socketServerUrl } from "./api";
+import { API_BASE_URL, apiUrl, assetUrl, socketIoPath, socketServerUrl } from "./api";
 import { setupPush } from "./push";
 import { canUseNativeLocation, startNativeLocation } from "./native-location";
 import type {
@@ -431,7 +431,7 @@ function App() {
   if (screen === "hider") return <HiderView payload={hider} message={message} onLeave={leave} claimOpen={claimOpen} setClaimOpen={setClaimOpen} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} photo={photo} setPhoto={setPhoto} openClaim={openClaim} submitClaim={submitClaim} confirmCaught={confirmCaught} />;
   if (screen === "seeker") return <SeekerView payload={seeker} message={message} onLeave={leave} />;
   if (screen === "gameover") return <GameOver winner={admin?.winner ? `${admin.winner} win` : gameOver?.winner || message || "Mission"} claims={admin?.game?.claims || []} leaderboard={admin?.game?.leaderboard || gameOver?.leaderboard || []} durationSeconds={gameOver?.durationSeconds || (admin?.game?.endedAt && admin.game.startedAt ? Math.round((admin.game.endedAt - admin.game.startedAt) / 1000) : 0)} history={admin?.history || (gameOver?.historyEntry ? [gameOver.historyEntry] : [])} onLeave={leave} isAdmin={role === "ADMIN"} />;
-  return <Waiting role={role} name={name} roster={roster} onLeave={leave} />;
+  return <Waiting role={role} name={name} roster={roster} playerSecret={playerSecret} onLeave={leave} />;
 }
 
 function Lobby({ name, setName, message, onJoin }: {
@@ -469,14 +469,39 @@ function Lobby({ name, setName, message, onJoin }: {
   </div></div>;
 }
 
-function Waiting({ role, name, roster, onLeave }: { role: Role | null; name: string; roster: PlayerPublic[]; onLeave: () => void }) {
+function Waiting({ role, name, roster, playerSecret, onLeave }: { role: Role | null; name: string; roster: PlayerPublic[]; playerSecret: string; onLeave: () => void }) {
   return <Shell title="Hide & Seek" role={role || undefined} subtitle="WAITING" onBack={onLeave}>
     <div className="body">
       <div className="card soft text-center"><div className="kicker">your role</div><div className={`role-big role-${role}`}>{role}</div><div className="mono">{name}</div></div>
       <Roster roster={roster} />
+      {playerSecret && <TraccarSetup playerSecret={playerSecret} />}
       <div className="card soft text-center"><div className="kicker">waiting for admin to start</div></div>
     </div>
   </Shell>;
+}
+
+// Helps a player point the Traccar Client app at this server for reliable background tracking.
+// The player secret doubles as the Traccar "Device identifier" (the server ingests pings at
+// /api/traccar and attributes them by matching this secret).
+function TraccarSetup({ playerSecret }: { playerSecret: string }) {
+  const serverUrl = `${API_BASE_URL || window.location.origin}/api/traccar`;
+  const [copied, setCopied] = useState<string | null>(null);
+  const copy = (key: string, value: string) => {
+    void navigator.clipboard?.writeText(value);
+    setCopied(key);
+    setTimeout(() => setCopied(current => (current === key ? null : current)), 1500);
+  };
+  return <div className="card">
+    <div className="card-title">Background tracking (Traccar)</div>
+    <div className="mono">Install the free <strong>Traccar Client</strong> app and enter these so your location keeps sharing while Urban Hunt is closed or your phone is locked.</div>
+    <div className="kicker" style={{ marginTop: 12 }}>Server URL</div>
+    <div className="mono" style={{ wordBreak: "break-all" }}>{serverUrl}</div>
+    <button className="btn" onClick={() => copy("url", serverUrl)}>{copied === "url" ? "Copied" : "Copy URL"}</button>
+    <div className="kicker" style={{ marginTop: 12 }}>Device identifier</div>
+    <div className="mono" style={{ wordBreak: "break-all" }}>{playerSecret}</div>
+    <button className="btn" onClick={() => copy("id", playerSecret)}>{copied === "id" ? "Copied" : "Copy identifier"}</button>
+    <div className="mono" style={{ marginTop: 12 }}>Set Frequency to 30s, then enable the toggle. Set this up now and stay joined so your identifier doesn't change.</div>
+  </div>;
 }
 
 function AdminView({ payload, roster, message, setMessage, onLeave }: {
