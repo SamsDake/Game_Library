@@ -100,3 +100,18 @@ button, input { font: inherit; }
 .history-row { margin-bottom: 8px; }
 .history-row:last-child { margin-bottom: 0; }
 @media (min-width: 760px) { .app { max-width: 440px; margin: 0 auto; border-left: 1px solid var(--line); border-right: 1px solid var(--line); } }
+
+/* Game-mode UI: VIP role banner, safehouse status, capture counter */
+.role-banner { border: 1px solid var(--line); padding: 12px; }
+.role-banner.role-VIP { border-color: var(--warn); box-shadow: 0 0 16px rgba(217,165,32,.25); }
+.role-banner.role-VIP .role-big { color: var(--warn); }
+.role-banner.role-BODYGUARD .role-big { color: var(--secondary); }
+.safehouse-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.safehouse-row:last-child { border-bottom: 0; }
+.sh-state { font-family: "JetBrains Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; }
+.sh-state.sh-idle { color: var(--muted, #6f7d54); }
+.sh-state.sh-breached { color: var(--danger); text-shadow: 0 0 14px var(--danger); }
+.sh-state.sh-contested { color: var(--warn); text-shadow: 0 0 12px var(--warn); }
+.safehouse-row.sh-breached { animation: sh-pulse 1.1s ease-in-out infinite; }
+@keyframes sh-pulse { 0%, 100% { background: transparent; } 50% { background: rgba(192,71,58,.12); } }
+.capture-counter { margin-top: 4px; }

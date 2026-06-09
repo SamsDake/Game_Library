@@ -15,7 +15,11 @@ export const DEFAULT_CONFIG: GameConfig = {
   regularObjectivePoints: 1,
   lockdownObjectivePoints: 2,
   proximityThresholds: { near: 200, far: 1000 },
-  claimRadius: 40
+  claimRadius: 40,
+  mode: "CLASSIC",
+  vipObjectiveTarget: 5,
+  safehouseRadius: 40,
+  safehouseCaptureTargetSeconds: 600
 };
 
 const london: Array<[PoiCategory, string, number, number]> = [

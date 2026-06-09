@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-const appBasePath = globalThis.process?.env.APP_BASE_PATH || '/';
+const appBasePath = globalThis.process?.env.APP_BASE_PATH || './';
 
 export default defineConfig({
   base: appBasePath,
