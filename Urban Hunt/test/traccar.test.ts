@@ -114,6 +114,16 @@ describe("traccar OsmAnd ingest", () => {
       });
       expect(seen).toBeTruthy();
 
+      // Be tolerant of Traccar/OsmAnd parameter variants and the public prefixed path.
+      const variantLon = lon + 0.0005;
+      const variantLat = lat + 0.0005;
+      const variant = await fetch(`${BASE}/urban-hunt/api/traccar?deviceId=${encodeURIComponent(jh.playerSecret)}&latitude=${variantLat}&longitude=${variantLon}`);
+      expect(variant.status).toBe(200);
+      await adminStateMatching(admin, s => {
+        const h = s.game.hiders.find((x: any) => x.playerId === jh.playerId);
+        return !!h && Math.abs(h.coords[0] - variantLon) < 1e-6 && Math.abs(h.coords[1] - variantLat) < 1e-6;
+      });
+
       // Simulate the phone app being backgrounded/closed: its socket is gone, but Traccar keeps
       // posting by player secret. The server must still use that location for admin + seekers.
       hider.close();
@@ -170,5 +180,12 @@ describe("traccar OsmAnd ingest", () => {
 
     const badCoords = await fetch(`${BASE}/api/traccar?id=not-a-real-secret&lat=abc&lon=xyz`);
     expect(badCoords.status).toBe(400);
+
+    const status = await fetch(`${BASE}/api/traccar/status`);
+    expect(status.status).toBe(200);
+    const json = await status.json() as { ok: boolean; recent: Array<{ reason: string; applied: boolean; id: string }> };
+    expect(json.ok).toBe(true);
+    expect(json.recent.some(item => item.reason === "unknown_device" && item.applied === false)).toBe(true);
+    expect(json.recent.every(item => item.id !== "not-a-real-secret")).toBe(true);
   }, 20000);
 });

@@ -92,6 +92,20 @@ const push = new PushService(path.resolve(ROOT, "data/vapid.json"));
 const overpass = new OverpassClient();
 const PROXIMITY_RANK: Record<string, number> = { Distant: 0, Far: 1, Near: 2 };
 let state: AppState = initialState();
+type TraccarDiagnostic = {
+  at: number;
+  path: string;
+  method: string;
+  id: string;
+  keys: string[];
+  matched: boolean;
+  hasCoordinates: boolean;
+  gameActive: boolean;
+  activeRole: "HIDER" | "SEEKER" | null;
+  applied: boolean;
+  reason: string;
+};
+const traccarDiagnostics: TraccarDiagnostic[] = [];
 
 const app = express();
 const server = http.createServer(app);
@@ -157,35 +171,67 @@ app.get("/api/client-config", (_req, res) => {
   res.json({ ok: true, demoLocationEnabled: DEMO_LOCATION_ENABLED });
 });
 
+app.get("/api/traccar/status", (_req, res) => {
+  res.json({ ok: true, recent: traccarDiagnostics.slice(-20).reverse() });
+});
+
 // Traccar Client (OsmAnd protocol) background-location ingest. A player runs the Traccar
 // Client app pointed at this URL with their player secret as the "Device identifier", so
 // their position keeps flowing while the Urban Hunt app is backgrounded or closed. Pings
 // feed the same history + delay pipeline as socket location updates.
-app.all("/api/traccar", async (req, res) => {
+const handleTraccarPing = async (req: Request, res: Response) => {
   const params = { ...req.query, ...req.body } as Record<string, unknown>;
-  const id = String(params.id ?? params.deviceid ?? "");
-  const lat = Number(params.lat);
-  const lon = Number(params.lon);
+  const id = String(firstParam(params, ["id", "deviceid", "deviceId", "device_id", "uniqueid", "uniqueId", "uid"]) ?? "");
+  const lat = Number(firstParam(params, ["lat", "latitude"]));
+  const lon = Number(firstParam(params, ["lon", "lng", "longitude"]));
   const player = id ? Object.values(state.players).find(p => p.secret === id) : undefined;
+  const activeRole = player ? activeGameRole(player.id) : null;
+  const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lon);
   if (!player || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+    recordTraccarDiagnostic(req, params, {
+      id,
+      matched: !!player,
+      hasCoordinates,
+      activeRole,
+      applied: false,
+      reason: !player ? "unknown_device" : "invalid_coordinates"
+    });
     res.sendStatus(400);
     return;
   }
   // Known device but no live game for them: accept-and-ignore so the client doesn't retry-spam.
-  if (state.game?.phase !== "active" || !activeGameRole(player.id)) {
+  if (state.game?.phase !== "active" || !activeRole) {
+    recordTraccarDiagnostic(req, params, {
+      id,
+      matched: true,
+      hasCoordinates: true,
+      activeRole,
+      applied: false,
+      reason: "no_active_game_role"
+    });
     res.sendStatus(200);
     return;
   }
   player.lastSeen = Date.now();
-  const accuracy = Number(params.accuracy);
+  const accuracy = Number(firstParam(params, ["accuracy", "acc", "hdop"]));
   await applyLocationToGame(
     player,
     [lon, lat],
     Number.isFinite(accuracy) ? accuracy : null,
-    parseLocationTimestamp(params.timestamp ?? params.time ?? params.fixtime)
+    parseLocationTimestamp(firstParam(params, ["timestamp", "time", "fixtime", "fixTime"]))
   );
+  recordTraccarDiagnostic(req, params, {
+    id,
+    matched: true,
+    hasCoordinates: true,
+    activeRole,
+    applied: true,
+    reason: "applied"
+  });
   res.sendStatus(200);
-});
+};
+
+app.all(["/api/traccar", "/api/traccar/", "/urban-hunt/api/traccar", "/urban-hunt/api/traccar/"], handleTraccarPing);
 
 app.get("/api/history", (_req, res) => {
   res.json({ ok: true, history: state.history || [] });
@@ -1477,6 +1523,18 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 }
 
+function firstParam(params: Record<string, unknown>, keys: string[]): unknown {
+  const lowerKeys = new Map(Object.keys(params).map(key => [key.toLowerCase(), key]));
+  for (const key of keys) {
+    const actual = lowerKeys.get(key.toLowerCase());
+    if (!actual) continue;
+    const value = params[actual];
+    if (Array.isArray(value)) return value[0];
+    return value;
+  }
+  return undefined;
+}
+
 function parseLocationTimestamp(value: unknown): number {
   const fallback = Date.now();
   if (value == null || value === "") return fallback;
@@ -1487,6 +1545,36 @@ function parseLocationTimestamp(value: unknown): number {
   }
   const parsed = Date.parse(String(value));
   return Number.isFinite(parsed) ? Math.min(fallback, Math.max(0, parsed)) : fallback;
+}
+
+function recordTraccarDiagnostic(
+  req: Request,
+  params: Record<string, unknown>,
+  event: Omit<TraccarDiagnostic, "at" | "path" | "method" | "keys" | "gameActive"> & { id: string }
+) {
+  const diagnostic: TraccarDiagnostic = {
+    at: Date.now(),
+    path: req.originalUrl || req.url,
+    method: req.method,
+    id: maskIdentifier(event.id),
+    keys: Object.keys(params).sort(),
+    matched: event.matched,
+    hasCoordinates: event.hasCoordinates,
+    gameActive: state.game?.phase === "active",
+    activeRole: event.activeRole,
+    applied: event.applied,
+    reason: event.reason
+  };
+  traccarDiagnostics.push(diagnostic);
+  traccarDiagnostics.splice(0, Math.max(0, traccarDiagnostics.length - 50));
+  if (!diagnostic.applied) {
+    console.warn("[traccar] ping ignored", diagnostic);
+  }
+}
+
+function maskIdentifier(value: string) {
+  if (!value) return "";
+  return value.length <= 8 ? `${value.slice(0, 2)}...` : `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
 function lockdownCycleMs(game: GameState) {

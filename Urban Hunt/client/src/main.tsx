@@ -765,6 +765,15 @@ function GameMap({ mode, admin, hider, seeker, onSetupCenterPick, onSetupRadiusP
         const color = SAFEHOUSE_COLORS[s.state] || "#6f7d54";
         const layer = L.geoJSON(s.circleGeoJSON, { style: { color, weight: 2, fillColor: color, fillOpacity: s.state === "idle" ? 0.1 : 0.3, dashArray: s.state === "breached" ? undefined : "6 4" } }).addTo(group);
         layer.bindTooltip(`Safehouse ${s.label} — ${s.state}`);
+        L.marker([s.center[1], s.center[0]], {
+          icon: L.divIcon({
+            className: "",
+            html: `<div class="safehouse-marker sh-map-${s.state}"><span>${s.label}</span></div>`,
+            iconSize: [34, 34],
+            iconAnchor: [17, 17],
+            tooltipAnchor: [0, -18]
+          })
+        }).addTo(group).bindTooltip(`Safehouse ${s.label} - ${s.objective.name}`);
         bounds.push(layer.getBounds());
       });
     };
@@ -869,7 +878,7 @@ function mapContentSignature(
         game.globalSafeZoneGeoJSON,
         game.hiders.map(h => [h.coords, h.lockdownCircleGeoJSON, h.nextLockdownCircleGeoJSON, h.hiderRole, slots(h.activeObjectives, h.activeObjective?.id, h.activeObjective?.coordinates)]),
         game.seekers.map(s => s.coords),
-        game.safehouses?.map(s => [s.id, s.state])
+        game.safehouses?.map(s => [s.id, s.state, s.center, s.circleGeoJSON])
       ]);
     }
     return JSON.stringify(["admin-setup", admin?.setup.center, admin?.setup.globalSafeZoneGeoJSON]);
@@ -878,7 +887,7 @@ function mapContentSignature(
     const me = hider?.me;
     return JSON.stringify(me ? [
       "hider", me.coordinates, me.globalSafeZoneGeoJSON, me.myLockdownCircleGeoJSON, me.nextLockdownCircleGeoJSON, me.legalAreaGeoJSON,
-      me.hiderRole, me.safehouses?.map(s => [s.id, s.state]), (me.teammates || []).map(t => [t.coordinates, t.hiderRole]),
+      me.hiderRole, me.safehouses?.map(s => [s.id, s.state, s.center, s.circleGeoJSON]), (me.teammates || []).map(t => [t.coordinates, t.hiderRole]),
       slots(me.activeObjectives, me.activeObjective?.id, me.activeObjective?.coordinates)
     ] : ["hider-empty"]);
   }
@@ -886,7 +895,7 @@ function mapContentSignature(
     "seeker",
     seeker?.mode,
     seeker?.globalSafeZoneGeoJSON,
-    (seeker?.safehouses || []).map(s => [s.id, s.state]),
+    (seeker?.safehouses || []).map(s => [s.id, s.state, s.center, s.circleGeoJSON]),
     (seeker?.seekers || []).map(s => s.coordinates),
     (seeker?.hiders || []).map(h => [h.delayedCoordinates, h.delayedTrail, h.lockdownCircleGeoJSON, slots(h.activeObjectives, h.activeObjective?.id, h.activeObjective?.coordinates)])
   ]);
