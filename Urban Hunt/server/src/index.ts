@@ -180,7 +180,7 @@ app.post("/api/claims", (req, res) => {
 });
 
 async function handleClaim(req: Request, res: Response) {
-  const { playerId, playerSecret, objectiveId, slotId, lon, lng, lat } = req.body;
+  const { playerId, playerSecret, objectiveId, slotId } = req.body;
   const player = state.players[playerId];
   const game = state.game;
   const hider = game?.hiders[playerId];
@@ -201,14 +201,8 @@ async function handleClaim(req: Request, res: Response) {
   if (!player.coords) return fail(422, "location_unavailable");
   const lastValidLocationAt = hider.history[hider.history.length - 1]?.timestamp || 0;
   if (!lastValidLocationAt || Date.now() - lastValidLocationAt > PLAYER_LOCATION_STALE_MS) return fail(422, "location_stale");
-  const submittedCoordinates = [
-    Number(lon ?? req.body.longitude ?? lng ?? req.body[0]),
-    Number(lat ?? req.body.latitude ?? req.body[1])
-  ] as LngLat;
-  if ((lon != null || lat != null || lng != null || req.body.longitude != null || req.body.latitude != null)
-    && (!Number.isFinite(submittedCoordinates[0]) || !Number.isFinite(submittedCoordinates[1]))) {
-    return fail(400, "invalid_coordinates");
-  }
+  // Use the server-authoritative position (last accepted in-bounds location_update), not any
+  // client-supplied coordinates, for the distance check.
   const coordinates = player.coords;
 
   expireLockdownObjectives(hider);
@@ -838,6 +832,10 @@ async function updateHiderLocation(playerId: string, coords: LngLat): Promise<bo
       .filter(item => item.timestamp > Date.now() - 30 * 60 * 1000);
     return true;
   }
+  // Within the buffer band but not fully inside: tolerated, so clear the strike counter. This
+  // keeps the 3-strike out-of-bounds debounce effectively consecutive (scattered boundary
+  // jitter no longer accumulates into a false flag).
+  hider.oobSamples = 0;
   return false;
 }
 
@@ -1275,9 +1273,12 @@ async function finishGame(winner: "HIDERS" | "SEEKERS") {
     startedAt: game.startedAt,
     endedAt: game.endedAt,
     durationSeconds: Math.max(0, Math.round((game.endedAt - game.startedAt) / 1000)),
-    hiders: game.leaderboard,
+    // Snapshot (not share) the live arrays so a post-game claim disallow updates the live
+    // leaderboard and the persisted history independently — sharing references double-counted
+    // the score penalty.
+    hiders: game.leaderboard.map(entry => ({ ...entry })),
     seekers: Object.values(game.seekers).map(seeker => ({ playerId: seeker.playerId, name: seeker.name })),
-    claims: game.claims
+    claims: game.claims.map(claim => ({ ...claim }))
   };
   state.history = [historyEntry, ...(state.history || []).filter(item => item.id !== game.id)];
   writeHistoryFile(state.history);

@@ -302,7 +302,7 @@ function App() {
     if (navigator.geolocation && window.isSecureContext) {
       geoWatch.current = navigator.geolocation.watchPosition(
         pos => send([pos.coords.longitude, pos.coords.latitude], pos.coords.accuracy),
-        () => handleLocationUnavailable(send, "GPS unavailable or permission denied"),
+        err => handleLocationUnavailable(send, err),
         { enableHighAccuracy: true, maximumAge: 5000, timeout: 12000 }
       );
     } else {
@@ -310,14 +310,26 @@ function App() {
     }
   }
 
-  function handleLocationUnavailable(send: (coords: LngLat, accuracy: number | null) => void, reason: string) {
+  function handleLocationUnavailable(send: (coords: LngLat, accuracy: number | null) => void, reasonOrError: string | GeolocationPositionError) {
+    const isError = typeof reasonOrError !== "string";
+    const permissionDenied = isError && reasonOrError.code === reasonOrError.PERMISSION_DENIED;
+    const reason = isError
+      ? (permissionDenied ? "GPS permission denied" : reasonOrError.message || "GPS signal unavailable")
+      : reasonOrError;
     if (demoLocationEnabled) {
       setMessage(`${reason}; demo location enabled`);
       startDemoLocation(send);
       return;
     }
-    stopLocation();
-    setMessage(`${reason}. Live GPS is required to play and claim objectives.`);
+    // Transient GPS errors (timeout / position unavailable) leave the active watch in place, so
+    // let it keep retrying. Only tear the watch down for unrecoverable cases: a string env reason
+    // (no geolocation API / insecure context) or an explicit permission denial.
+    if (!isError || permissionDenied) {
+      stopLocation();
+      setMessage(`${reason}. Live GPS is required to play and claim objectives.`);
+      return;
+    }
+    setMessage(`${reason}. Retrying GPS…`);
   }
 
   function startDemoLocation(send: (coords: LngLat, accuracy: number | null) => void) {
@@ -588,7 +600,7 @@ function HiderView({ payload, message, onLeave, claimOpen, setClaimOpen, selecte
       confirmCaught();
     } else {
       setCaughtUntil(Date.now() + 5000);
-      window.setTimeout(() => setCaughtUntil(current => current > Date.now() ? 0 : current), 5000);
+      window.setTimeout(() => setCaughtUntil(0), 5000);
     }
   }
   return <Shell title="Hide & Seek" role="HIDER" subtitle={payload?.gameId || "ACTIVE"} onBack={onLeave}>
