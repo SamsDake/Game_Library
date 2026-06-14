@@ -7,6 +7,8 @@ import "./styles.css";
 import { apiUrl, assetUrl, socketIoPath, socketServerUrl } from "./api";
 import { setupPush } from "./push";
 import { canUseNativeLocation, startNativeLocation } from "./native-location";
+import { OBJECTIVE_CATEGORIES } from "@shared/poi-categories";
+import { POI_CATEGORY_LABELS } from "@shared/types";
 import type {
   AdminConfigPayload,
   AdminStatePayload,
@@ -19,6 +21,7 @@ import type {
   LngLat,
   LocationUpdatePayload,
   ObjectiveSlot,
+  PoiCategory,
   PlayerPublic,
   Role,
   Safehouse,
@@ -49,7 +52,8 @@ const DEFAULT_CONFIG: GameConfig = {
   mode: "CLASSIC",
   vipObjectiveTarget: 5,
   safehouseRadius: 40,
-  safehouseCaptureTargetSeconds: 600
+  safehouseCaptureTargetSeconds: 600,
+  objectiveCategories: [...OBJECTIVE_CATEGORIES]
 };
 
 const MODE_LABELS: Record<GameMode, string> = {
@@ -873,6 +877,7 @@ function mapContentSignature(
 function Settings({ config, onChange }: { config: GameConfig; onChange: (payload: AdminConfigPayload) => void }) {
   return <div className="card"><div className="card-title">Game Settings</div>
     <DualRange label="Objective spawn distance" low={config.objectiveMinDistance} high={config.objectiveMaxDistance} min={0} max={3000} step={50} unit="m" onChange={(objectiveMinDistance, objectiveMaxDistance) => onChange({ objectiveMinDistance, objectiveMaxDistance })} />
+    <ObjectiveCategoryChecks selected={config.objectiveCategories} onChange={objectiveCategories => onChange({ objectiveCategories })} />
     <Range label="Game length (0 = no limit)" value={config.gameDurationMinutes} min={0} max={600} step={5} unit="m" onChange={gameDurationMinutes => onChange({ gameDurationMinutes })} />
     <Range label="Shrink" value={config.globalSqueezePercentage} min={1} max={50} step={1} unit="%" onChange={globalSqueezePercentage => onChange({ globalSqueezePercentage })} />
     <Range label="Shrink interval" value={config.shrinkIntervalSeconds} min={10} max={3600} step={10} unit="s" onChange={shrinkIntervalSeconds => onChange({ shrinkIntervalSeconds })} />
@@ -887,6 +892,29 @@ function Settings({ config, onChange }: { config: GameConfig; onChange: (payload
     {config.mode === "VIP_ESCORT" && <Range label="VIP objectives to win" value={config.vipObjectiveTarget} min={1} max={20} step={1} unit="" onChange={vipObjectiveTarget => onChange({ vipObjectiveTarget })} />}
     {config.mode === "SAFEHOUSES" && <Range label="Safehouse radius" value={config.safehouseRadius} min={10} max={500} step={5} unit="m" onChange={safehouseRadius => onChange({ safehouseRadius })} />}
     {config.mode === "SAFEHOUSES" && <Range label="Capture time to win" value={config.safehouseCaptureTargetSeconds} min={30} max={3600} step={30} unit="s" onChange={safehouseCaptureTargetSeconds => onChange({ safehouseCaptureTargetSeconds })} />}
+  </div>;
+}
+
+function ObjectiveCategoryChecks({ selected, onChange }: { selected: PoiCategory[]; onChange: (categories: PoiCategory[]) => void }) {
+  const selectedSet = new Set(selected.length ? selected : OBJECTIVE_CATEGORIES);
+  const toggle = (category: PoiCategory) => {
+    const nextSet = new Set(selectedSet);
+    if (nextSet.has(category)) nextSet.delete(category);
+    else nextSet.add(category);
+    const next = OBJECTIVE_CATEGORIES.filter(item => nextSet.has(item));
+    if (next.length) onChange(next);
+  };
+  return <div className="field">
+    <div className="field-label">Objective Features<strong>{selectedSet.size}/{OBJECTIVE_CATEGORIES.length}</strong></div>
+    <div className="feature-grid">
+      {OBJECTIVE_CATEGORIES.map(category => {
+        const checked = selectedSet.has(category);
+        return <label key={category} className={`feature-check${checked ? " selected" : ""}`}>
+          <input type="checkbox" checked={checked} disabled={checked && selectedSet.size === 1} onChange={() => toggle(category)} />
+          <span>{POI_CATEGORY_LABELS[category]}</span>
+        </label>;
+      })}
+    </div>
   </div>;
 }
 

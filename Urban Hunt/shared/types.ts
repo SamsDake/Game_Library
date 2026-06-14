@@ -34,6 +34,7 @@ export interface GameConfig {
   vipObjectiveTarget: number;
   safehouseRadius: number;
   safehouseCaptureTargetSeconds: number;
+  objectiveCategories: PoiCategory[];
 }
 
 export interface PlayerPublic {
@@ -82,7 +83,9 @@ export type PoiCategory =
   | "park"
   | "restaurant"
   | "consulate"
-  | "golf";
+  | "golf"
+  | "pub"
+  | "bar";
 
 export interface HiderState {
   playerId: string;
@@ -238,6 +241,7 @@ export interface AdminConfigPayload {
   vipObjectiveTarget?: number;
   safehouseRadius?: number;
   safehouseCaptureTargetSeconds?: number;
+  objectiveCategories?: PoiCategory[];
 }
 
 export interface SeekerPingPayload {
@@ -329,7 +333,9 @@ export const POI_CATEGORY_LABELS: Record<PoiCategory, string> = {
   park: "Park",
   restaurant: "Restaurant",
   consulate: "Consulate",
-  golf: "Golf Course"
+  golf: "Golf Course",
+  pub: "Pub",
+  bar: "Bar"
 };
 
 export type PointFeature = Feature<Point>;

@@ -24,6 +24,7 @@ import type {
   LngLat,
   Objective,
   ObjectiveSlot,
+  PoiCategory,
   PlayerInternal,
   PlayerPublic,
   Safehouse,
@@ -91,6 +92,7 @@ const db = new Database(process.env.DATABASE_URL);
 const push = new PushService(path.resolve(ROOT, "data/vapid.json"));
 const overpass = new OverpassClient();
 const PROXIMITY_RANK: Record<string, number> = { Distant: 0, Far: 1, Near: 2 };
+const OBJECTIVE_CATEGORY_SET = new Set<PoiCategory>(OBJECTIVE_CATEGORIES);
 let state: AppState = initialState();
 
 const app = express();
@@ -566,7 +568,8 @@ function applyConfig(payload: AdminConfigPayload) {
       near: clampNumber(payload.proximityThresholds?.near, current.proximityThresholds.near, 10, 1000),
       far: clampNumber(payload.proximityThresholds?.far, current.proximityThresholds.far, 100, 5000)
     },
-    claimRadius: clampNumber(payload.claimRadius, current.claimRadius, 10, 200)
+    claimRadius: clampNumber(payload.claimRadius, current.claimRadius, 10, 200),
+    objectiveCategories: normalizeObjectiveCategories(payload.objectiveCategories, current.objectiveCategories)
   };
   const center = payload.center || state.setup.center;
   const radius = clampNumber(payload.radius, state.setup.radius, 100, 20000);
@@ -1172,8 +1175,11 @@ async function nextObjectiveFor(
   outsideArea: Feature<Polygon> | null
 ): Promise<Objective | null> {
   const used = activeObjectiveIds(game);
+  const allowedCategories = normalizeObjectiveCategories(game.config.objectiveCategories);
+  const allowedCategorySet = new Set<PoiCategory>(allowedCategories);
   const blocked = (obj: Objective) =>
     used.has(obj.id) ||
+    !allowedCategorySet.has(obj.category) ||
     !containsPoint(area, obj.coordinates) ||
     (!!outsideArea && containsPoint(outsideArea, obj.coordinates));
   const { objectiveMinDistance, objectiveMaxDistance } = game.config;
@@ -1181,8 +1187,8 @@ async function nextObjectiveFor(
     const d = distanceMeters(hider.coords, obj.coordinates);
     return d < objectiveMinDistance || d > objectiveMaxDistance;
   };
-  return (await pickObjective(hider, area, obj => blocked(obj) || outOfBand(obj)))
-    ?? (await pickObjective(hider, area, blocked));
+  return (await pickObjective(hider, area, allowedCategories, obj => blocked(obj) || outOfBand(obj)))
+    ?? (await pickObjective(hider, area, allowedCategories, blocked));
 }
 
 // Resolve a single objective from the source chain (seeded PostGIS → live Overpass → fallback
@@ -1190,12 +1196,13 @@ async function nextObjectiveFor(
 async function pickObjective(
   hider: HiderState,
   area: Feature<Polygon>,
+  categories: PoiCategory[],
   reject: (obj: Objective) => boolean
 ): Promise<Objective | null> {
   if (db.enabled) {
     const start = Math.floor(Math.random() * 1000) + hider.objectiveIndex;
     for (let attempt = 0; attempt < 120; attempt += 1) {
-      const obj = await db.findObjectiveInside(area, OBJECTIVE_CATEGORIES, start + attempt);
+      const obj = await db.findObjectiveInside(area, categories, start + attempt);
       if (!obj) break;
       if (!reject(obj)) return obj;
     }
@@ -1435,6 +1442,18 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 }
 
+function normalizeObjectiveCategories(value: unknown, fallback: PoiCategory[] = OBJECTIVE_CATEGORIES): PoiCategory[] {
+  const selected = Array.isArray(value)
+    ? value.filter((category): category is PoiCategory => OBJECTIVE_CATEGORY_SET.has(category as PoiCategory))
+    : [];
+  const unique = Array.from(new Set(selected));
+  if (unique.length) return unique;
+
+  const fallbackSelected = fallback.filter(category => OBJECTIVE_CATEGORY_SET.has(category));
+  const uniqueFallback = Array.from(new Set(fallbackSelected));
+  return uniqueFallback.length ? uniqueFallback : [...OBJECTIVE_CATEGORIES];
+}
+
 function lockdownCycleMs(game: GameState) {
   return game.config.pingIntervalMinutes * 60 * 1000 * game.config.lockdownIntervalCount;
 }
@@ -1509,13 +1528,17 @@ async function boot() {
 }
 
 function normalizeConfig(config: Partial<typeof DEFAULT_CONFIG> = {}) {
-  return {
+  const merged = {
     ...DEFAULT_CONFIG,
     ...config,
     proximityThresholds: {
       ...DEFAULT_CONFIG.proximityThresholds,
       ...config.proximityThresholds
     }
+  };
+  return {
+    ...merged,
+    objectiveCategories: normalizeObjectiveCategories(config.objectiveCategories, DEFAULT_CONFIG.objectiveCategories)
   };
 }
 
