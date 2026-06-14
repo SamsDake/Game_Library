@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { useGameStore } from './lib/store.js';
+import { MAX_HAND } from './lib/data.js';
 import { HiderPanel } from './components/HiderPanel.jsx';
 import { SeekerPanel } from './components/SeekerPanel.jsx';
 import { AdminOverlay, AdminLock } from './components/AdminOverlay.jsx';
@@ -10,7 +11,7 @@ import { Toasts } from './components/ui.jsx';
 import { HomeScreen, LobbyScreen, CountdownScreen, RelocateScreen, FoundScreen, LeaderboardScreen } from './components/screens.jsx';
 
 const DEVICE_KEY = 'jetlag_device_v1';
-const TWEAK_DEFAULTS = { countdownMins: 120, maxHand: 6, drawOverride: 0 };
+const TWEAK_DEFAULTS = { countdownMins: 120, maxHand: MAX_HAND, drawOverride: 0 };
 const APP_BASE = import.meta.env.BASE_URL || '/';
 let nativePushToken = null;
 let nativePushListenersReady = false;

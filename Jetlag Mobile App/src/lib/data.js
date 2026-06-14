@@ -216,4 +216,5 @@ export const SEED_LEADERBOARD = [
 ];
 
 export const ADMIN_CODE = '6789';
+export const MAX_HAND = 6;
 export const MAP_GEO_CATS = ['radar', 'thermometer'];

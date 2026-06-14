@@ -1,6 +1,6 @@
 // store.js — Zustand game store (v3 design + Leaflet map state)
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { CATEGORIES, CAT_BY_ID, DECK_BY_ID, DEFAULT_DECK_CONFIG, buildDeck, SEED_LEADERBOARD, optionLabel } from './data.js';
+import { CATEGORIES, CAT_BY_ID, DECK_BY_ID, DEFAULT_DECK_CONFIG, buildDeck, SEED_LEADERBOARD, optionLabel, MAX_HAND } from './data.js';
 import { applyClue, computeConstraint, bisectorHalfPlane } from './geometry.js';
 
 const LS_KEY = 'jetlag_state_v4';
@@ -308,7 +308,7 @@ export function useGameStore(cfg) {
     },
 
     resolveDraw(finalHand, keptCount) {
-      patch(s => ({ ...s, hand: finalHand.slice(-12), pendingDraw: null, feed: logIn(s, `Hiders kept ${keptCount} card${keptCount === 1 ? '' : 's'}.`) }));
+      patch(s => ({ ...s, hand: finalHand.slice(-MAX_HAND), pendingDraw: null, feed: logIn(s, `Hiders kept ${keptCount} card${keptCount === 1 ? '' : 's'}.`) }));
     },
 
     playCard(cardUid, costDiscards) {
@@ -391,14 +391,14 @@ export function useGameStore(cfg) {
       patch(s => {
         const remove = new Set([cardUid, ...discardUids]);
         const { cards, deck } = drawCards(s.deck, card.drawN, s.deckConfig);
-        return { ...s, deck, hand: [...s.hand.filter(h => !remove.has(h.uid)), ...cards].slice(-12), feed: logIn(s, `Hiders discarded ${discardUids.length} and drew ${card.drawN}.`) };
+        return { ...s, deck, hand: [...s.hand.filter(h => !remove.has(h.uid)), ...cards].slice(-MAX_HAND), feed: logIn(s, `Hiders discarded ${discardUids.length} and drew ${card.drawN}.`) };
       });
     },
 
     duplicateCard(cardUid, targetUid) {
       patch(s => {
         const target = s.hand.find(h => h.uid === targetUid); if (!target) return s;
-        return { ...s, hand: [...s.hand.filter(h => h.uid !== cardUid), { uid: uid(), cardId: target.cardId }].slice(-12), feed: logIn(s, 'Hiders duplicated a card.') };
+        return { ...s, hand: [...s.hand.filter(h => h.uid !== cardUid), { uid: uid(), cardId: target.cardId }].slice(-MAX_HAND), feed: logIn(s, 'Hiders duplicated a card.') };
       });
     },
 
@@ -511,10 +511,31 @@ export function useGameStore(cfg) {
     setPhase(phase) {
       patch(s => {
         const n = { ...s, phase };
-        if (phase === 'countdown' && !s.countdownEndsAt) n.countdownEndsAt = Date.now() + s.countdownMs;
-        if (phase === 'hunt' && !s.huntStartedAt) n.huntStartedAt = Date.now();
-        if (phase === 'hunt') n.huntFrozenAt = null;
-        if (phase === 'found') n.huntFrozenAt = Date.now();
+        const now = Date.now();
+        if (phase === 'lobby') {
+          n.countdownEndsAt = null;
+          n.huntStartedAt = null;
+          n.huntFrozenAt = null;
+          n.relocateEndsAt = null;
+          n.paused = false;
+          n.pausedAt = null;
+          n.pausedAccum = 0;
+        }
+        if (phase === 'countdown') {
+          n.countdownEndsAt = now + s.countdownMs;
+          n.huntStartedAt = null;
+          n.huntFrozenAt = null;
+          n.relocateEndsAt = null;
+          n.paused = false;
+          n.pausedAt = null;
+          n.pausedAccum = 0;
+        }
+        if (phase === 'hunt') {
+          n.countdownEndsAt = now;
+          if (!s.huntStartedAt) n.huntStartedAt = now;
+          n.huntFrozenAt = null;
+        }
+        if (phase === 'found') n.huntFrozenAt = now;
         n.feed = logIn(s, `Admin set state → ${phase}.`);
         return n;
       });
@@ -526,7 +547,7 @@ export function useGameStore(cfg) {
     },
     adjustCountdown(d) { patch(s => s.countdownEndsAt ? { ...s, countdownEndsAt: s.countdownEndsAt + d * 60000 } : { ...s, countdownMs: Math.max(0, s.countdownMs + d * 60000) }); },
     adjustHide(d) { patch(s => ({ ...s, bonusMs: s.bonusMs + d * 60000, feed: logIn(s, `Admin ${d >= 0 ? 'added' : 'removed'} ${Math.abs(d)} min of hide time.`) })); },
-    giveCard(cardId) { patch(s => ({ ...s, hand: [...s.hand, { uid: uid(), cardId }].slice(-12), feed: logIn(s, 'Admin gave a card.') })); },
+    giveCard(cardId) { patch(s => ({ ...s, hand: [...s.hand, { uid: uid(), cardId }].slice(-MAX_HAND), feed: logIn(s, 'Admin gave a card.') })); },
     clearHand() { patch(s => ({ ...s, hand: [], feed: logIn(s, 'Admin cleared the hand.') })); },
     removeLeader(i) { patch(s => ({ ...s, leaderboard: s.leaderboard.filter((_, j) => j !== i) })); },
     clearLeaderboard() { patch(s => ({ ...s, leaderboard: [] })); },

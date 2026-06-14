@@ -218,10 +218,18 @@ function App() {
     }
   }, []);
 
+  const locationActive =
+    (role === "HIDER" && hider?.phase === "active" && !!hider.me && !!hider.gameId) ||
+    (role === "SEEKER" && seeker?.phase === "active");
+
   useEffect(() => {
-    if (role === "HIDER" || role === "SEEKER") startLocation();
+    if (locationActive) startLocation();
+    else {
+      stopLocation();
+      clearPendingLocation();
+    }
     return stopLocation;
-  }, [role, hider?.phase, seeker?.phase, demoLocationEnabled]);
+  }, [locationActive, role, hider?.gameId, demoLocationEnabled]);
 
   useEffect(() => {
     stopHeartbeat();
@@ -339,7 +347,8 @@ function App() {
   function startDemoLocation(send: (coords: LngLat, accuracy: number | null) => void) {
     if (geoWatch.current) navigator.geolocation.clearWatch(geoWatch.current);
     geoWatch.current = null;
-    let coords = admin?.setup.center || hider?.me?.coordinates || seeker?.seekers[0]?.coordinates || [-0.0915, 51.5125] as LngLat;
+    const seekerSelf = seeker?.seekers.find(s => s.playerId === playerId);
+    let coords = hider?.me?.coordinates || seekerSelf?.coordinates || admin?.setup.center || [-0.0915, 51.5125] as LngLat;
     demoTimer.current = window.setInterval(() => {
       const target = role === "HIDER" ? hider?.me?.activeObjective.coordinates : seeker?.hiders[0]?.delayedCoordinates;
       if (target) coords = [coords[0] + (target[0] - coords[0]) * 0.04, coords[1] + (target[1] - coords[1]) * 0.04];
@@ -447,7 +456,7 @@ function App() {
   if (screen === "hider") return <HiderView payload={hider} message={message} onLeave={leave} claimOpen={claimOpen} setClaimOpen={setClaimOpen} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} photo={photo} setPhoto={setPhoto} openClaim={openClaim} submitClaim={submitClaim} confirmCaught={confirmCaught} />;
   if (screen === "seeker") return <SeekerView payload={seeker} message={message} onLeave={leave} />;
   if (screen === "gameover") return <GameOver winner={admin?.winner ? `${admin.winner} win` : gameOver?.winner || message || "Mission"} claims={admin?.game?.claims || []} leaderboard={admin?.game?.leaderboard || gameOver?.leaderboard || []} durationSeconds={gameOver?.durationSeconds || (admin?.game?.endedAt && admin.game.startedAt ? Math.round((admin.game.endedAt - admin.game.startedAt) / 1000) : 0)} history={admin?.history || (gameOver?.historyEntry ? [gameOver.historyEntry] : [])} onLeave={leave} isAdmin={role === "ADMIN"} />;
-  return <Waiting role={role} name={name} roster={roster} onLeave={leave} />;
+  return <Waiting role={role} name={name} roster={roster} playerSecret={playerSecret} onLeave={leave} />;
 }
 
 function Lobby({ name, setName, message, onJoin }: {
@@ -485,14 +494,39 @@ function Lobby({ name, setName, message, onJoin }: {
   </div></div>;
 }
 
-function Waiting({ role, name, roster, onLeave }: { role: Role | null; name: string; roster: PlayerPublic[]; onLeave: () => void }) {
+function Waiting({ role, name, roster, playerSecret, onLeave }: { role: Role | null; name: string; roster: PlayerPublic[]; playerSecret: string; onLeave: () => void }) {
   return <Shell title="Hide & Seek" role={role || undefined} subtitle="WAITING" onBack={onLeave}>
     <div className="body">
       <div className="card soft text-center"><div className="kicker">your role</div><div className={`role-big role-${role}`}>{role}</div><div className="mono">{name}</div></div>
       <Roster roster={roster} />
+      {playerSecret && <TraccarSetup playerSecret={playerSecret} />}
       <div className="card soft text-center"><div className="kicker">waiting for admin to start</div></div>
     </div>
   </Shell>;
+}
+
+// Helps a player point the Traccar Client app at this server for reliable background tracking.
+// The player secret doubles as the Traccar "Device identifier" (the server ingests pings at
+// /api/traccar and attributes them by matching this secret).
+function TraccarSetup({ playerSecret }: { playerSecret: string }) {
+  const serverUrl = new URL(apiUrl("/api/traccar"), window.location.origin).href;
+  const [copied, setCopied] = useState<string | null>(null);
+  const copy = (key: string, value: string) => {
+    void navigator.clipboard?.writeText(value);
+    setCopied(key);
+    setTimeout(() => setCopied(current => (current === key ? null : current)), 1500);
+  };
+  return <div className="card">
+    <div className="card-title">Background tracking (Traccar)</div>
+    <div className="mono">Install the free <strong>Traccar Client</strong> app and enter these so your location keeps sharing while Urban Hunt is closed or your phone is locked.</div>
+    <div className="kicker" style={{ marginTop: 12 }}>Server URL</div>
+    <div className="mono" style={{ wordBreak: "break-all" }}>{serverUrl}</div>
+    <button className="btn" onClick={() => copy("url", serverUrl)}>{copied === "url" ? "Copied" : "Copy URL"}</button>
+    <div className="kicker" style={{ marginTop: 12 }}>Device identifier</div>
+    <div className="mono" style={{ wordBreak: "break-all" }}>{playerSecret}</div>
+    <button className="btn" onClick={() => copy("id", playerSecret)}>{copied === "id" ? "Copied" : "Copy identifier"}</button>
+    <div className="mono" style={{ marginTop: 12 }}>Set Frequency to 30s, then enable the toggle. Set this up now and stay joined so your identifier doesn't change.</div>
+  </div>;
 }
 
 function AdminView({ payload, roster, message, setMessage, onLeave }: {
@@ -747,6 +781,15 @@ function GameMap({ mode, admin, hider, seeker, onSetupCenterPick, onSetupRadiusP
         const color = SAFEHOUSE_COLORS[s.state] || "#6f7d54";
         const layer = L.geoJSON(s.circleGeoJSON, { style: { color, weight: 2, fillColor: color, fillOpacity: s.state === "idle" ? 0.1 : 0.3, dashArray: s.state === "breached" ? undefined : "6 4" } }).addTo(group);
         layer.bindTooltip(`Safehouse ${s.label} — ${s.state}`);
+        L.marker([s.center[1], s.center[0]], {
+          icon: L.divIcon({
+            className: "",
+            html: `<div class="safehouse-marker sh-map-${s.state}"><span>${s.label}</span></div>`,
+            iconSize: [34, 34],
+            iconAnchor: [17, 17],
+            tooltipAnchor: [0, -18]
+          })
+        }).addTo(group).bindTooltip(`Safehouse ${s.label} - ${s.objective.name}`);
         bounds.push(layer.getBounds());
       });
     };
@@ -851,7 +894,7 @@ function mapContentSignature(
         game.globalSafeZoneGeoJSON,
         game.hiders.map(h => [h.coords, h.lockdownCircleGeoJSON, h.nextLockdownCircleGeoJSON, h.hiderRole, slots(h.activeObjectives, h.activeObjective?.id, h.activeObjective?.coordinates)]),
         game.seekers.map(s => s.coords),
-        game.safehouses?.map(s => [s.id, s.state])
+        game.safehouses?.map(s => [s.id, s.state, s.center, s.circleGeoJSON])
       ]);
     }
     return JSON.stringify(["admin-setup", admin?.setup.center, admin?.setup.globalSafeZoneGeoJSON]);
@@ -860,7 +903,7 @@ function mapContentSignature(
     const me = hider?.me;
     return JSON.stringify(me ? [
       "hider", me.coordinates, me.globalSafeZoneGeoJSON, me.myLockdownCircleGeoJSON, me.nextLockdownCircleGeoJSON, me.legalAreaGeoJSON,
-      me.hiderRole, me.safehouses?.map(s => [s.id, s.state]), (me.teammates || []).map(t => [t.coordinates, t.hiderRole]),
+      me.hiderRole, me.safehouses?.map(s => [s.id, s.state, s.center, s.circleGeoJSON]), (me.teammates || []).map(t => [t.coordinates, t.hiderRole]),
       slots(me.activeObjectives, me.activeObjective?.id, me.activeObjective?.coordinates)
     ] : ["hider-empty"]);
   }
@@ -868,7 +911,7 @@ function mapContentSignature(
     "seeker",
     seeker?.mode,
     seeker?.globalSafeZoneGeoJSON,
-    (seeker?.safehouses || []).map(s => [s.id, s.state]),
+    (seeker?.safehouses || []).map(s => [s.id, s.state, s.center, s.circleGeoJSON]),
     (seeker?.seekers || []).map(s => s.coordinates),
     (seeker?.hiders || []).map(h => [h.delayedCoordinates, h.delayedTrail, h.lockdownCircleGeoJSON, slots(h.activeObjectives, h.activeObjective?.id, h.activeObjective?.coordinates)])
   ]);

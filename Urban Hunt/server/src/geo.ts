@@ -60,7 +60,7 @@ export function delayedCoordinate(history: HiderState["history"], delayMinutes: 
   timestamp: number;
 } {
   const target = Date.now() - delayMinutes * 60 * 1000;
-  return history.find(item => item.timestamp >= target) || history[0] || {
+  return history.find(item => item.timestamp >= target) || history[history.length - 1] || {
     coordinates: [0, 0],
     timestamp: Date.now()
   };

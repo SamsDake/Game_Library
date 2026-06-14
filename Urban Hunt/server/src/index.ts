@@ -94,6 +94,20 @@ const overpass = new OverpassClient();
 const PROXIMITY_RANK: Record<string, number> = { Distant: 0, Far: 1, Near: 2 };
 const OBJECTIVE_CATEGORY_SET = new Set<PoiCategory>(OBJECTIVE_CATEGORIES);
 let state: AppState = initialState();
+type TraccarDiagnostic = {
+  at: number;
+  path: string;
+  method: string;
+  id: string;
+  keys: string[];
+  matched: boolean;
+  hasCoordinates: boolean;
+  gameActive: boolean;
+  activeRole: "HIDER" | "SEEKER" | null;
+  applied: boolean;
+  reason: string;
+};
+const traccarDiagnostics: TraccarDiagnostic[] = [];
 
 const app = express();
 const server = http.createServer(app);
@@ -140,6 +154,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 app.use("/uploads", express.static(UPLOAD_DIR));
 
 app.get("/api/health", (_req, res) => {
@@ -157,6 +172,68 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/client-config", (_req, res) => {
   res.json({ ok: true, demoLocationEnabled: DEMO_LOCATION_ENABLED });
 });
+
+app.get("/api/traccar/status", (_req, res) => {
+  res.json({ ok: true, recent: traccarDiagnostics.slice(-20).reverse() });
+});
+
+// Traccar Client (OsmAnd protocol) background-location ingest. A player runs the Traccar
+// Client app pointed at this URL with their player secret as the "Device identifier", so
+// their position keeps flowing while the Urban Hunt app is backgrounded or closed. Pings
+// feed the same history + delay pipeline as socket location updates.
+const handleTraccarPing = async (req: Request, res: Response) => {
+  const params = { ...req.query, ...req.body } as Record<string, unknown>;
+  const id = String(firstParam(params, ["id", "deviceid", "deviceId", "device_id", "uniqueid", "uniqueId", "uid"]) ?? "");
+  const lat = Number(firstParam(params, ["lat", "latitude"]));
+  const lon = Number(firstParam(params, ["lon", "lng", "longitude"]));
+  const player = id ? Object.values(state.players).find(p => p.secret === id) : undefined;
+  const activeRole = player ? activeGameRole(player.id) : null;
+  const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lon);
+  if (!player || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+    recordTraccarDiagnostic(req, params, {
+      id,
+      matched: !!player,
+      hasCoordinates,
+      activeRole,
+      applied: false,
+      reason: !player ? "unknown_device" : "invalid_coordinates"
+    });
+    res.sendStatus(400);
+    return;
+  }
+  // Known device but no live game for them: accept-and-ignore so the client doesn't retry-spam.
+  if (state.game?.phase !== "active" || !activeRole) {
+    recordTraccarDiagnostic(req, params, {
+      id,
+      matched: true,
+      hasCoordinates: true,
+      activeRole,
+      applied: false,
+      reason: "no_active_game_role"
+    });
+    res.sendStatus(200);
+    return;
+  }
+  player.lastSeen = Date.now();
+  const accuracy = Number(firstParam(params, ["accuracy", "acc", "hdop"]));
+  await applyLocationToGame(
+    player,
+    [lon, lat],
+    Number.isFinite(accuracy) ? accuracy : null,
+    parseLocationTimestamp(firstParam(params, ["timestamp", "time", "fixtime", "fixTime"]))
+  );
+  recordTraccarDiagnostic(req, params, {
+    id,
+    matched: true,
+    hasCoordinates: true,
+    activeRole,
+    applied: true,
+    reason: "applied"
+  });
+  res.sendStatus(200);
+};
+
+app.all(["/api/traccar", "/api/traccar/", "/urban-hunt/api/traccar", "/urban-hunt/api/traccar/"], handleTraccarPing);
 
 app.get("/api/history", (_req, res) => {
   res.json({ ok: true, history: state.history || [] });
@@ -395,21 +472,7 @@ io.on("connection", socket => {
     player.online = true;
     player.sockets = Array.from(new Set([...(player.sockets || []), socket.id]));
 
-    if (player.role === "HIDER") {
-      const accepted = await updateHiderLocation(player.id, coords);
-      if (accepted) {
-        player.coords = coords;
-        player.accuracy = payload.accuracy ?? null;
-      }
-    }
-    if (player.role === "SEEKER") {
-      player.coords = coords;
-      player.accuracy = payload.accuracy ?? null;
-      updateSeekerLocation(player.id, coords);
-    }
-
-    await recomputeDerived();
-    await saveAndEmit();
+    await applyLocationToGame(player, coords, payload.accuracy ?? null, parseLocationTimestamp(payload.timestamp));
     ack({ ok: true });
   });
 
@@ -812,10 +875,12 @@ function activeGameRole(playerId: string): "HIDER" | "SEEKER" | null {
   return null;
 }
 
-async function updateHiderLocation(playerId: string, coords: LngLat): Promise<boolean> {
+async function updateHiderLocation(playerId: string, coords: LngLat, timestamp: number): Promise<boolean> {
   const game = state.game;
   const hider = game?.hiders[playerId];
   if (!game || !hider) return false;
+  const lastTimestamp = hider.history[hider.history.length - 1]?.timestamp || 0;
+  if (timestamp < lastTimestamp) return false;
 
   const insideTrue = containsPoint(game.globalSafeZoneGeoJSON, coords);
   const insideBuffered = containsPointWithBuffer(game.globalSafeZoneGeoJSON, coords, 20);
@@ -831,7 +896,7 @@ async function updateHiderLocation(playerId: string, coords: LngLat): Promise<bo
     hider.isOutOfBounds = false;
     hider.oobSamples = 0;
     hider.coords = coords;
-    hider.history = [...hider.history, { coordinates: coords, timestamp: Date.now() }]
+    hider.history = [...hider.history, { coordinates: coords, timestamp }]
       .filter(item => item.timestamp > Date.now() - 30 * 60 * 1000);
     return true;
   }
@@ -842,12 +907,36 @@ async function updateHiderLocation(playerId: string, coords: LngLat): Promise<bo
   return false;
 }
 
-function updateSeekerLocation(playerId: string, coords: LngLat) {
+function updateSeekerLocation(playerId: string, coords: LngLat, timestamp: number): boolean {
   const seeker = state.game?.seekers[playerId];
-  if (!seeker) return;
+  if (!seeker) return false;
+  const lastTimestamp = seeker.history[seeker.history.length - 1]?.timestamp || 0;
+  if (timestamp < lastTimestamp) return false;
   seeker.coords = coords;
-  seeker.history = [...seeker.history, { coordinates: coords, timestamp: Date.now() }]
+  seeker.history = [...seeker.history, { coordinates: coords, timestamp }]
     .filter(item => item.timestamp > Date.now() - 30 * 60 * 1000);
+  return true;
+}
+
+// Shared by the socket `location_update` handler and the Traccar HTTP ingest so both
+// sources funnel through the identical bounds-check / history / delay / broadcast path.
+async function applyLocationToGame(player: PlayerInternal, coords: LngLat, accuracy: number | null, timestamp = Date.now()) {
+  if (player.role === "HIDER") {
+    const accepted = await updateHiderLocation(player.id, coords, timestamp);
+    if (accepted) {
+      player.coords = coords;
+      player.accuracy = accuracy;
+    }
+  }
+  if (player.role === "SEEKER") {
+    const accepted = updateSeekerLocation(player.id, coords, timestamp);
+    if (accepted) {
+      player.coords = coords;
+      player.accuracy = accuracy;
+    }
+  }
+  await recomputeDerived();
+  await saveAndEmit();
 }
 
 async function recomputeDerived() {
@@ -1442,16 +1531,58 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 }
 
-function normalizeObjectiveCategories(value: unknown, fallback: PoiCategory[] = OBJECTIVE_CATEGORIES): PoiCategory[] {
-  const selected = Array.isArray(value)
-    ? value.filter((category): category is PoiCategory => OBJECTIVE_CATEGORY_SET.has(category as PoiCategory))
-    : [];
-  const unique = Array.from(new Set(selected));
-  if (unique.length) return unique;
+function firstParam(params: Record<string, unknown>, keys: string[]): unknown {
+  const lowerKeys = new Map(Object.keys(params).map(key => [key.toLowerCase(), key]));
+  for (const key of keys) {
+    const actual = lowerKeys.get(key.toLowerCase());
+    if (!actual) continue;
+    const value = params[actual];
+    if (Array.isArray(value)) return value[0];
+    return value;
+  }
+  return undefined;
+}
 
-  const fallbackSelected = fallback.filter(category => OBJECTIVE_CATEGORY_SET.has(category));
-  const uniqueFallback = Array.from(new Set(fallbackSelected));
-  return uniqueFallback.length ? uniqueFallback : [...OBJECTIVE_CATEGORIES];
+function parseLocationTimestamp(value: unknown): number {
+  const fallback = Date.now();
+  if (value == null || value === "") return fallback;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    const milliseconds = numeric < 1_000_000_000_000 ? numeric * 1000 : numeric;
+    return Math.min(fallback, Math.max(0, milliseconds));
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? Math.min(fallback, Math.max(0, parsed)) : fallback;
+}
+
+function recordTraccarDiagnostic(
+  req: Request,
+  params: Record<string, unknown>,
+  event: Omit<TraccarDiagnostic, "at" | "path" | "method" | "keys" | "gameActive"> & { id: string }
+) {
+  const diagnostic: TraccarDiagnostic = {
+    at: Date.now(),
+    path: req.originalUrl || req.url,
+    method: req.method,
+    id: maskIdentifier(event.id),
+    keys: Object.keys(params).sort(),
+    matched: event.matched,
+    hasCoordinates: event.hasCoordinates,
+    gameActive: state.game?.phase === "active",
+    activeRole: event.activeRole,
+    applied: event.applied,
+    reason: event.reason
+  };
+  traccarDiagnostics.push(diagnostic);
+  traccarDiagnostics.splice(0, Math.max(0, traccarDiagnostics.length - 50));
+  if (!diagnostic.applied) {
+    console.warn("[traccar] ping ignored", diagnostic);
+  }
+}
+
+function maskIdentifier(value: string) {
+  if (!value) return "";
+  return value.length <= 8 ? `${value.slice(0, 2)}...` : `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
 function lockdownCycleMs(game: GameState) {
