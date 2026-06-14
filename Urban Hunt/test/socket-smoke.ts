@@ -71,7 +71,8 @@ async function main() {
     const configured = await emitAck<{ ok: boolean }>(admin, "update_variables", {
       regularObjectivePoints: 3,
       lockdownObjectivePoints: 5,
-      lockdownForecastDistance: 75
+      lockdownForecastDistance: 75,
+      objectiveCategories: ["library"]
     });
     assert.equal(configured.ok, true);
     const started = await emitAck<{ ok: boolean }>(admin, "admin_start_game", {});
@@ -86,6 +87,7 @@ async function main() {
     const hiderState: any = await once(hider, "status_update");
     const seekerState: any = await once(seeker, "ping_broadcast");
     assert.ok(hiderState.me.activeObjective.id);
+    assert.equal(hiderState.me.activeObjective.category, "library");
     assert.equal(hiderState.me.activeObjectives[0].scoreValue, 3);
     assert.ok(hiderState.me.nextLockdownCircleGeoJSON);
     assert.ok(hiderState.me.lockdownExpiresAt);

@@ -108,7 +108,9 @@ export class Database {
       }
     }
 
-    const valid = FALLBACK_OBJECTIVES.filter(poi => containsPoint(area, poi.coordinates));
+    const valid = FALLBACK_OBJECTIVES.filter(poi =>
+      containsPoint(area, poi.coordinates) && (!categories?.length || categories.includes(poi.category))
+    );
     return valid[offset % Math.max(1, valid.length)] || null;
   }
 

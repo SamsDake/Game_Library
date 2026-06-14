@@ -1,4 +1,5 @@
 import type { GameConfig, Objective, PoiCategory } from "../../shared/types";
+import { OBJECTIVE_CATEGORIES } from "../../shared/poi-categories";
 
 export const DEFAULT_CONFIG: GameConfig = {
   pingIntervalMinutes: 3,
@@ -19,7 +20,8 @@ export const DEFAULT_CONFIG: GameConfig = {
   mode: "CLASSIC",
   vipObjectiveTarget: 5,
   safehouseRadius: 40,
-  safehouseCaptureTargetSeconds: 600
+  safehouseCaptureTargetSeconds: 600,
+  objectiveCategories: [...OBJECTIVE_CATEGORIES]
 };
 
 const london: Array<[PoiCategory, string, number, number]> = [

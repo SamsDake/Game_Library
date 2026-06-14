@@ -14,8 +14,7 @@ export interface OverpassElement {
   tags?: Record<string, string>;
 }
 
-// Objectives are sourced from Overpass for exactly these seven categories:
-// Hospitals, Train Stations, Cinemas, Libraries, Museums, Parks, Restaurants.
+// Objectives are sourced from Overpass for these feature categories.
 export const OVERPASS_CATEGORIES: OverpassCategory[] = [
   { category: "hospital", filters: ['["amenity"="hospital"]'] },
   { category: "station", filters: ['["railway"="station"]'] },
@@ -25,13 +24,15 @@ export const OVERPASS_CATEGORIES: OverpassCategory[] = [
   { category: "park", filters: ['["leisure"="park"]'] },
   { category: "restaurant", filters: ['["amenity"="restaurant"]'] },
   { category: "consulate", filters: ['["office"="diplomatic"]'] },
-  { category: "golf", filters: ['["leisure"="golf_course"]'] }
+  { category: "golf", filters: ['["leisure"="golf_course"]'] },
+  { category: "pub", filters: ['["amenity"="pub"]'] },
+  { category: "bar", filters: ['["amenity"="bar"]'] }
 ];
 
 // Single source of truth for the categories an objective may belong to.
 export const OBJECTIVE_CATEGORIES: PoiCategory[] = OVERPASS_CATEGORIES.map(c => c.category);
 
-// Map raw OSM tags to one of our seven objective categories (null = not an objective POI).
+// Map raw OSM tags to one of our objective categories (null = not an objective POI).
 export function categoryForTags(tags: Record<string, string>): PoiCategory | null {
   if (tags.amenity === "hospital") return "hospital";
   if (tags.railway === "station") return "station";
@@ -42,6 +43,8 @@ export function categoryForTags(tags: Record<string, string>): PoiCategory | nul
   if (tags.amenity === "restaurant") return "restaurant";
   if (tags.office === "diplomatic") return "consulate";
   if (tags.leisure === "golf_course") return "golf";
+  if (tags.amenity === "pub") return "pub";
+  if (tags.amenity === "bar") return "bar";
   return null;
 }
 
