@@ -1531,6 +1531,18 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 }
 
+function normalizeObjectiveCategories(value: unknown, fallback: PoiCategory[] = OBJECTIVE_CATEGORIES): PoiCategory[] {
+  const selected = Array.isArray(value)
+    ? value.filter((category): category is PoiCategory => OBJECTIVE_CATEGORY_SET.has(category as PoiCategory))
+    : [];
+  const unique = Array.from(new Set(selected));
+  if (unique.length) return unique;
+
+  const fallbackSelected = fallback.filter(category => OBJECTIVE_CATEGORY_SET.has(category));
+  const uniqueFallback = Array.from(new Set(fallbackSelected));
+  return uniqueFallback.length ? uniqueFallback : [...OBJECTIVE_CATEGORIES];
+}
+
 function firstParam(params: Record<string, unknown>, keys: string[]): unknown {
   const lowerKeys = new Map(Object.keys(params).map(key => [key.toLowerCase(), key]));
   for (const key of keys) {
