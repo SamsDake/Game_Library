@@ -538,8 +538,11 @@ function AdminView({ payload, roster, message, setMessage, onLeave }: {
 }) {
   const setup = payload?.setup;
   const game = payload?.game;
-  const config = game?.config || setup?.config || DEFAULT_CONFIG;
+  const serverConfig = game?.config || setup?.config || DEFAULT_CONFIG;
   const [draft, setDraft] = useState<AdminConfigPayload>({});
+  // Overlay the locally accumulated draft so edits show immediately instead of waiting for the
+  // server to echo them back (a controlled checkbox bound only to serverConfig reverts on click).
+  const config: GameConfig = { ...serverConfig, ...draft, proximityThresholds: { ...serverConfig.proximityThresholds, ...draft.proximityThresholds } };
   const [mapPickMode, setMapPickMode] = useState<"center" | "radius">("radius");
   useEffect(() => setDraft({}), [payload?.phase]);
   const emitAdmin = (event: string, payload: unknown, successMessage?: string) => {
