@@ -939,7 +939,7 @@ function Settings({ config, onChange }: { config: GameConfig; onChange: (payload
 }
 
 function ObjectiveCategoryChecks({ selected, onChange }: { selected: PoiCategory[]; onChange: (categories: PoiCategory[]) => void }) {
-  const selectedSet = new Set(selected.length ? selected : OBJECTIVE_CATEGORIES);
+  const selectedSet = new Set(selected?.length ? selected : OBJECTIVE_CATEGORIES);
   const toggle = (category: PoiCategory) => {
     const nextSet = new Set(selectedSet);
     if (nextSet.has(category)) nextSet.delete(category);
@@ -1146,4 +1146,30 @@ function distanceMeters(a: LngLat, b: LngLat) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+// A render exception anywhere in the tree would otherwise unmount everything and leave a
+// blank white screen. This contains the error and lets the player reset back to the lobby.
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.error("[app] render crashed", error);
+  }
+  reset = () => {
+    for (const key of ["uh_role", "uh_player_id", "uh_player_secret", PENDING_LOCATION_KEY]) {
+      localStorage.removeItem(key);
+    }
+    window.location.reload();
+  };
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return <div className="app"><div className="lobby">
+      <div className="logo">HIDE &amp; SEEK</div>
+      <div className="notice">Something went wrong. Tap below to return to the lobby.</div>
+      <button className="btn primary" onClick={this.reset}>Return To Lobby</button>
+    </div></div>;
+  }
+}
+
+createRoot(document.getElementById("root")!).render(<ErrorBoundary><App /></ErrorBoundary>);
