@@ -544,7 +544,7 @@ function AdminView({ payload, roster, message, setMessage, onLeave }: {
   // server to echo them back (a controlled checkbox bound only to serverConfig reverts on click).
   const config: GameConfig = { ...serverConfig, ...draft, proximityThresholds: { ...serverConfig.proximityThresholds, ...draft.proximityThresholds } };
   const [mapPickMode, setMapPickMode] = useState<"center" | "radius">("radius");
-  useEffect(() => setDraft({}), [payload?.phase]);
+  useEffect(() => { if (payload?.phase === "setup") setDraft({}); }, [payload?.phase]);
   const emitAdmin = (event: string, payload: unknown, successMessage?: string) => {
     socket.emit(event, payload, (ack: { ok: boolean; error?: string }) => {
       if (!ack?.ok) setMessage(`Admin action failed: ${ack?.error || "unknown"}`);
