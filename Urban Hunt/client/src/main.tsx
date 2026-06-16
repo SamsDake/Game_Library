@@ -105,6 +105,10 @@ function App() {
   useEffect(() => { identityRef.current = { playerId, playerSecret }; }, [playerId, playerSecret]);
   const leaveRef = useRef<() => void>(() => {});
   const connectedOnceRef = useRef(false);
+  // The admin authenticates with a PIN, not a stored playerId/secret, so a dropped socket would
+  // otherwise reconnect un-authenticated and silently reject every admin action. Stash the PIN
+  // (kept in sessionStorage so a tab reload can also re-auth) to re-join admin on reconnect.
+  const adminPinRef = useRef<string | null>(sessionStorage.getItem("uh_admin_pin"));
 
   useEffect(() => {
     fetch(apiUrl("/api/client-config"))
@@ -174,7 +178,10 @@ function App() {
       // fresh socket with the existing player so location/heartbeat resume without a reload.
       // The server's join_game matches on playerId+secret. Admin can't auto-rejoin (no stored PIN).
       const storedRole = localStorage.getItem("uh_role") as Role | null;
-      if (connectedOnceRef.current && pid && secret && storedRole && storedRole !== "ADMIN") {
+      if (connectedOnceRef.current && storedRole === "ADMIN" && adminPinRef.current) {
+        // Re-authenticate the admin so config changes after a reconnect aren't silently rejected.
+        socket.emit("join_game", { role: "ADMIN", name: localStorage.getItem("uh_name") || "ADMIN", adminPin: adminPinRef.current });
+      } else if (connectedOnceRef.current && pid && secret && storedRole && storedRole !== "ADMIN") {
         socket.emit("join_game", { role: storedRole, name: localStorage.getItem("uh_name") || storedRole, playerId: pid, playerSecret: secret }, (ack: { ok?: boolean }) => {
           if (ack?.ok) flushPendingLocation();
         });
@@ -258,6 +265,10 @@ function App() {
       setRole(ack.role);
       setPlayerId(ack.playerId);
       setPlayerSecret(ack.playerSecret);
+      if (ack.role === "ADMIN" && payload.adminPin) {
+        adminPinRef.current = payload.adminPin;
+        sessionStorage.setItem("uh_admin_pin", payload.adminPin);
+      }
       localStorage.setItem("uh_role", ack.role);
       localStorage.setItem("uh_player_id", ack.playerId);
       localStorage.setItem("uh_player_secret", ack.playerSecret);
@@ -271,6 +282,8 @@ function App() {
     socket.emit("leave_game");
     stopLocation();
     stopHeartbeat();
+    adminPinRef.current = null;
+    sessionStorage.removeItem("uh_admin_pin");
     localStorage.removeItem("uh_role");
     localStorage.removeItem("uh_player_id");
     localStorage.removeItem("uh_player_secret");
@@ -540,11 +553,6 @@ function AdminView({ payload, roster, message, setMessage, onLeave }: {
   const game = payload?.game;
   const serverConfig = game?.config || setup?.config || DEFAULT_CONFIG;
   const [draft, setDraft] = useState<AdminConfigPayload>({});
-  // Mirror the draft in a ref so several edits fired before the next render (e.g. unchecking
-  // multiple feature boxes in quick succession) each compose against the latest value instead
-  // of a stale closure — otherwise only the last edit survives and earlier ones are dropped.
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
   // Overlay the locally accumulated draft so edits show immediately instead of waiting for the
   // server to echo them back (a controlled checkbox bound only to serverConfig reverts on click).
   const config: GameConfig = { ...serverConfig, ...draft, proximityThresholds: { ...serverConfig.proximityThresholds, ...draft.proximityThresholds } };
@@ -557,8 +565,7 @@ function AdminView({ payload, roster, message, setMessage, onLeave }: {
     });
   };
   const update = (next: AdminConfigPayload) => {
-    const merged = { ...draftRef.current, ...next };
-    draftRef.current = merged;
+    const merged = { ...draft, ...next };
     setDraft(merged);
     emitAdmin("update_variables", merged);
   };

@@ -75,6 +75,21 @@ async function main() {
       objectiveCategories: ["library"]
     });
     assert.equal(configured.ok, true);
+
+    // A dropped admin socket reconnects as a brand-new (un-authenticated) socket. Until it
+    // re-joins as ADMIN, config writes must be rejected — otherwise they are silently dropped
+    // while the client's optimistic UI pretends they applied. The client re-auths on reconnect.
+    const adminReconnect = io(BASE, { transports: ["websocket"], reconnection: false });
+    await once(adminReconnect, "connect");
+    const beforeReauth = await emitAck<{ ok: boolean; error?: string }>(adminReconnect, "update_variables", { objectiveCategories: ["museum"] });
+    assert.equal(beforeReauth.ok, false);
+    assert.equal(beforeReauth.error, "admin_required");
+    const reauth = await emitAck<{ ok: boolean }>(adminReconnect, "join_game", { role: "ADMIN", name: "Control", adminPin: "2468" });
+    assert.equal(reauth.ok, true);
+    const afterReauth = await emitAck<{ ok: boolean }>(adminReconnect, "update_variables", { objectiveCategories: ["library"] });
+    assert.equal(afterReauth.ok, true);
+    adminReconnect.close();
+
     const started = await emitAck<{ ok: boolean }>(admin, "admin_start_game", {});
     assert.equal(started.ok, true);
     const duplicateStart = await emitAck<{ ok: boolean; error?: string }>(admin, "admin_start_game", {});
