@@ -771,17 +771,18 @@ async function applyModeSetup(game: GameState) {
 async function selectSafehouses(game: GameState): Promise<Safehouse[]> {
   const zone = game.globalSafeZoneGeoJSON;
   const radius = game.config.safehouseRadius;
+  const allowed = new Set(normalizeObjectiveCategories(game.config.objectiveCategories));
   const candidates: Objective[] = [];
   const seen = new Set<string>();
   const add = (obj: Objective | null | undefined) => {
-    if (!obj || seen.has(obj.id) || !containsPoint(zone, obj.coordinates)) return;
+    if (!obj || seen.has(obj.id) || !allowed.has(obj.category) || !containsPoint(zone, obj.coordinates)) return;
     seen.add(obj.id);
     candidates.push(obj);
   };
   for (const obj of overpass.getCached(zone)) add(obj);
   if (db.enabled && candidates.length < 12) {
     for (let attempt = 0; attempt < 60 && candidates.length < 24; attempt += 1) {
-      add(await db.findObjectiveInside(zone, OBJECTIVE_CATEGORIES, Math.floor(Math.random() * 1000) + attempt));
+      add(await db.findObjectiveInside(zone, [...allowed], Math.floor(Math.random() * 1000) + attempt));
     }
   }
   for (const obj of FALLBACK_OBJECTIVES) add(obj);

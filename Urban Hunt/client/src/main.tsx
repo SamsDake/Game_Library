@@ -540,6 +540,11 @@ function AdminView({ payload, roster, message, setMessage, onLeave }: {
   const game = payload?.game;
   const serverConfig = game?.config || setup?.config || DEFAULT_CONFIG;
   const [draft, setDraft] = useState<AdminConfigPayload>({});
+  // Mirror the draft in a ref so several edits fired before the next render (e.g. unchecking
+  // multiple feature boxes in quick succession) each compose against the latest value instead
+  // of a stale closure — otherwise only the last edit survives and earlier ones are dropped.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   // Overlay the locally accumulated draft so edits show immediately instead of waiting for the
   // server to echo them back (a controlled checkbox bound only to serverConfig reverts on click).
   const config: GameConfig = { ...serverConfig, ...draft, proximityThresholds: { ...serverConfig.proximityThresholds, ...draft.proximityThresholds } };
@@ -552,7 +557,8 @@ function AdminView({ payload, roster, message, setMessage, onLeave }: {
     });
   };
   const update = (next: AdminConfigPayload) => {
-    const merged = { ...draft, ...next };
+    const merged = { ...draftRef.current, ...next };
+    draftRef.current = merged;
     setDraft(merged);
     emitAdmin("update_variables", merged);
   };

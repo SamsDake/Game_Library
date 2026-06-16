@@ -173,12 +173,14 @@ async function main() {
       const jh = await emitAck<any>(hider, "join_game", { role: "HIDER", name: "Ghost" });
       assert.equal((await emitAck<any>(seeker, "join_game", { role: "SEEKER", name: "Alpha" })).ok, true);
 
-      assert.equal((await emitAck<any>(admin, "update_variables", { mode: "SAFEHOUSES", safehouseRadius: 400, gameDurationMinutes: 0 })).ok, true);
+      const allowedCategories = ["park", "museum", "station"];
+      assert.equal((await emitAck<any>(admin, "update_variables", { mode: "SAFEHOUSES", safehouseRadius: 400, gameDurationMinutes: 0, objectiveCategories: allowedCategories })).ok, true);
       assert.equal((await emitAck<any>(admin, "admin_start_game", {})).ok, true);
 
       const state = await adminGameState(admin);
       const safehouses: any[] = state.game.safehouses || [];
       assert.ok(safehouses.length >= 1, "safehouses auto-selected");
+      assert.ok(safehouses.every((s: any) => allowedCategories.includes(s.objective.category)), "safehouses respect the objective category filter");
       assert.equal(state.game.totalCaptureSeconds, 0, "capture counter starts at zero");
       assert.ok(state.game.hiders.every((h: any) => (h.activeObjectives || []).length === 0), "hiders hold no personal objectives");
 
