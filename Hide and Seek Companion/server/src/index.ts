@@ -32,6 +32,7 @@ const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
 const UPLOAD_DIR = path.resolve(ROOT, process.env.UPLOAD_DIR || "data/uploads");
 const STATE_FILE = path.resolve(ROOT, process.env.STATE_FILE || "data/state.json");
 const CLIENT_DIST = path.resolve(ROOT, "client/dist");
+const PUBLIC_BASE_PATH = normalizeBasePath(process.env.APP_BASE_PATH || "/hide-and-seek/");
 const CLAIM_RADIUS_M = 40;
 const PLAYER_STALE_SWEEP_MS = 10 * 1000;
 
@@ -101,6 +102,12 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
     return;
+  }
+  next();
+});
+app.use((req, _res, next) => {
+  if (PUBLIC_BASE_PATH && (req.url === PUBLIC_BASE_PATH || req.url.startsWith(`${PUBLIC_BASE_PATH}/`))) {
+    req.url = req.url.slice(PUBLIC_BASE_PATH.length) || "/";
   }
   next();
 });
@@ -545,6 +552,12 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
 
 function noop(_value?: unknown) {
   return undefined;
+}
+
+function normalizeBasePath(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "/") return "";
+  return `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
 }
 
 function boot() {
