@@ -19,24 +19,32 @@ jobs:
           node-version: '22'
 
       - name: Build web client
-        working-directory: Urban Hunt
+        working-directory: Hide and Seek Companion
         run: |
           npm install
-          VITE_API_BASE_URL=https://comicsams.cloud/urban-hunt npm run build
+          VITE_API_BASE_URL=https://comicsams.cloud/hide-and-seek npm run build
 
-      - name: Add Firebase Android config
-        working-directory: Urban Hunt
-        env:
-          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.URBAN_HUNT_GOOGLE_SERVICES_JSON_BASE64 }}
+      - name: Add and sync Android platform
+        working-directory: Hide and Seek Companion
+        run: npx cap add android
+
+      - name: Add location permissions to AndroidManifest
+        working-directory: Hide and Seek Companion
         run: |
-          if [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
-            printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
-          else
-            echo "URBAN_HUNT_GOOGLE_SERVICES_JSON_BASE64 not set; Android native push will not work."
-          fi
+          python3 -c "
+          path = 'android/app/src/main/AndroidManifest.xml'
+          with open(path) as f:
+              content = f.read()
+          perms = '    <uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\" />\n    <uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\" />\n'
+          if 'ACCESS_FINE_LOCATION' not in content:
+              content = content.replace('<application', perms + '    <application', 1)
+          with open(path, 'w') as f:
+              f.write(content)
+          print('AndroidManifest updated')
+          "
 
       - name: Sync Capacitor to Android
-        working-directory: Urban Hunt
+        working-directory: Hide and Seek Companion
         run: npx cap sync android
 
       - uses: actions/setup-java@v4
@@ -45,17 +53,17 @@ jobs:
           java-version: '21'
 
       - name: Make gradlew executable
-        working-directory: Urban Hunt/android
+        working-directory: Hide and Seek Companion/android
         run: chmod +x gradlew
 
       - name: Build debug APK
-        working-directory: Urban Hunt/android
+        working-directory: Hide and Seek Companion/android
         run: ./gradlew assembleDebug
 
       - uses: actions/upload-artifact@v4
         with:
-          name: urban-hunt-android
-          path: Urban Hunt/android/app/build/outputs/apk/debug/app-debug.apk
+          name: hide-and-seek-android
+          path: Hide and Seek Companion/android/app/build/outputs/apk/debug/app-debug.apk
 
   ios:
     runs-on: macos-latest
@@ -67,38 +75,33 @@ jobs:
           node-version: '22'
 
       - name: Build web client
-        working-directory: Urban Hunt
+        working-directory: Hide and Seek Companion
         run: |
           npm install
-          VITE_API_BASE_URL=https://comicsams.cloud/urban-hunt npm run build
+          VITE_API_BASE_URL=https://comicsams.cloud/hide-and-seek npm run build
 
-      - name: Sync Capacitor to iOS
-        working-directory: Urban Hunt
-        run: npx cap sync ios
+      - name: Add and sync iOS platform
+        working-directory: Hide and Seek Companion
+        run: |
+          npx cap add ios
+          npx cap sync ios
 
       - name: Ensure location permissions in Info.plist
-        working-directory: Urban Hunt
+        working-directory: Hide and Seek Companion
         run: |
           python3 -c "
           import plistlib
           path = 'ios/App/App/Info.plist'
           with open(path, 'rb') as f:
               plist = plistlib.load(f)
-          plist['NSLocationWhenInUseUsageDescription'] = 'Urban Hunt uses your location so seekers and hiders can play the active game.'
-          plist['NSLocationAlwaysAndWhenInUseUsageDescription'] = 'Urban Hunt uses your location while the app is backgrounded or the device is locked during an active game.'
-          modes = plist.get('UIBackgroundModes', [])
-          if 'location' not in modes:
-              modes.append('location')
-          plist['UIBackgroundModes'] = modes
+          plist['NSLocationWhenInUseUsageDescription'] = 'Hide and Seek Companion uses your location to verify objective proof photos.'
           with open(path, 'wb') as f:
               plistlib.dump(plist, f)
           print('NSLocationWhenInUseUsageDescription:', plist.get('NSLocationWhenInUseUsageDescription'))
-          print('NSLocationAlwaysAndWhenInUseUsageDescription:', plist.get('NSLocationAlwaysAndWhenInUseUsageDescription'))
-          print('UIBackgroundModes:', plist.get('UIBackgroundModes'))
           "
 
       - name: Build unsigned app
-        working-directory: Urban Hunt
+        working-directory: Hide and Seek Companion
         run: |
           set -o pipefail
           xcodebuild \
@@ -118,20 +121,20 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: xcodebuild-log
-          path: Urban Hunt/xcodebuild.log
+          name: hideandseek-xcodebuild-log
+          path: Hide and Seek Companion/xcodebuild.log
 
       - name: Package as IPA
-        working-directory: Urban Hunt
+        working-directory: Hide and Seek Companion
         run: |
           mkdir Payload
           cp -r build/Release-iphoneos/App.app Payload/
-          zip -r UrbanHunt.ipa Payload/
+          zip -r HideAndSeekCompanion.ipa Payload/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: urban-hunt-ios
-          path: Urban Hunt/UrbanHunt.ipa
+          name: hide-and-seek-ios
+          path: Hide and Seek Companion/HideAndSeekCompanion.ipa
 
   jetlag-android:
     runs-on: ubuntu-latest

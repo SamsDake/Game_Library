@@ -5,13 +5,14 @@ The Capacitor apps use two notification paths:
 - Browser/PWA installs keep using Web Push and VAPID.
 - Sideloaded native apps register native tokens. Android tokens are sent through Firebase Cloud Messaging. iOS tokens are sent directly through APNs.
 
+Hide and Seek Companion does not use push notifications and is not part of this setup.
+
 ## GitHub Actions Secrets
 
 Android native push requires each APK to include its Firebase `google-services.json`.
 Store each JSON file as base64 in these repository secrets:
 
 ```text
-URBAN_HUNT_GOOGLE_SERVICES_JSON_BASE64
 JETLAG_GOOGLE_SERVICES_JSON_BASE64
 ```
 
@@ -19,7 +20,7 @@ The current workflow still builds unsigned IPAs. iOS remote push requires an App
 
 ## Server Environment
 
-Set these on the deployed Urban Hunt and Jetlag server processes.
+Set these on the deployed Jetlag server process.
 
 For Android FCM sends, use either:
 
@@ -43,4 +44,4 @@ APNS_BUNDLE_ID
 APNS_ENV
 ```
 
-`APNS_PRIVATE_KEY_BASE64` can be used instead of `APNS_PRIVATE_KEY`. Set `APNS_BUNDLE_ID` to `com.urbanhunt.app` for Urban Hunt and `com.jetlagmobileapp.app` for Jetlag. Set `APNS_ENV` to `development` or `production` to match the provisioning profile used to sign the IPA.
+`APNS_PRIVATE_KEY_BASE64` can be used instead of `APNS_PRIVATE_KEY`. Set `APNS_BUNDLE_ID` to `com.jetlagmobileapp.app`. Set `APNS_ENV` to `development` or `production` to match the provisioning profile used to sign the IPA.

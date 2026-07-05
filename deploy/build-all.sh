@@ -4,11 +4,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "Building Urban Hunt..."
+echo "Building Hide and Seek Companion..."
 (
-  cd "$ROOT_DIR/Urban Hunt"
+  cd "$ROOT_DIR/Hide and Seek Companion"
   npm ci
-  APP_BASE_PATH=/urban-hunt/ VITE_API_BASE_URL=/urban-hunt npm run build
+  APP_BASE_PATH=/hide-and-seek/ VITE_API_BASE_URL=/hide-and-seek npm run build
 )
 
 echo "Building Jetlag Mobile App..."

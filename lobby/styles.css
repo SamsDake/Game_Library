@@ -112,11 +112,11 @@ h1 {
   z-index: 1;
 }
 
-.urban {
+.hideseek {
   --tile-bg:
-    linear-gradient(145deg, rgba(12, 18, 13, 0.2), rgba(5, 8, 5, 0.86)),
-    repeating-linear-gradient(90deg, rgba(147, 171, 92, 0.18) 0 1px, transparent 1px 58px),
-    linear-gradient(135deg, #293525, #11170f 58%, #050806);
+    linear-gradient(145deg, rgba(255, 90, 60, 0.18), rgba(10, 10, 10, 0.86)),
+    repeating-linear-gradient(90deg, rgba(47, 212, 165, 0.16) 0 1px, transparent 1px 58px),
+    linear-gradient(135deg, #2a1a14, #121212 58%, #050505);
 }
 
 .jetlag {

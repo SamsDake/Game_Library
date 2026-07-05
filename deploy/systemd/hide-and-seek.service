@@ -1,0 +1,17 @@
+[Unit]
+Description=Hide and Seek Companion game server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/minigame-library/Hide and Seek Companion
+ExecStart=/usr/bin/npm run start
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=ADMIN_PIN=change-me
+Restart=always
+RestartSec=5
+User=www-data
+
+[Install]
+WantedBy=multi-user.target

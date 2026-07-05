@@ -1,0 +1,49 @@
+{
+  "name": "hide-and-seek-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hide and Seek Companion - real-world proof-based hide and seek, objectives sourced from real OpenStreetMap places",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm:server:dev\" \"npm:client:dev\"",
+    "server:dev": "cross-env PORT=3000 tsx watch --env-file-if-exists=.env server/src/index.ts",
+    "client:dev": "vite --config client/vite.config.ts --host 0.0.0.0",
+    "build": "tsc -p server/tsconfig.json --noEmit && vite build --config client/vite.config.ts",
+    "start": "tsx --env-file-if-exists=.env server/src/index.ts",
+    "check": "tsc -p server/tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit",
+    "preload:pois": "tsx --env-file-if-exists=.env server/scripts/preload-pois.ts",
+    "test": "vitest run",
+    "native:sync": "npm run build && cap sync",
+    "native:android": "cap open android",
+    "native:ios": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/geolocation": "*",
+    "@capacitor/ios": "^8.4.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "express": "^4.19.2",
+    "leaflet": "^1.9.4",
+    "multer": "^2.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/leaflet": "^1.9.15",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
+  }
+}

@@ -9,7 +9,7 @@ This template assumes the contents of `Game Library` are deployed to:
 The public routes are:
 
 - `/` -> `lobby/`
-- `/urban-hunt/` -> Urban Hunt Express server on `127.0.0.1:3000`
+- `/hide-and-seek/` -> Hide and Seek Companion Express server on `127.0.0.1:3000`
 - `/jetlag/` -> Jetlag Mobile static build
 - `/jetlag-api/` and `/jetlag-ws` -> Jetlag Mobile server on `127.0.0.1:8080`
 - `/deduction-board/` -> Deduction Board static build
@@ -22,7 +22,7 @@ After copying the systemd files to `/etc/systemd/system/`, update secrets such a
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now urban-hunt jetlag-mobile-server jetlag-deduction-server
+sudo systemctl enable --now hide-and-seek jetlag-mobile-server jetlag-deduction-server
 sudo nginx -t
 sudo systemctl reload nginx
 ```

@@ -1,0 +1,15 @@
+{
+  "name": "Hide and Seek Companion",
+  "short_name": "Hide and Seek",
+  "description": "Real-world proof-based hide and seek, objectives sourced from real places.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
