@@ -19,7 +19,7 @@ The lobby is a launcher with three tiles. Tap a tile to open that app:
 
 | Tile | Opens | Link |
 |------|-------|------|
-| **Urban Hunt** — Live GPS field game | `/urban-hunt/` | Hide, seek, claim objectives, run the match from an admin console. |
+| **Hide and Seek Companion** — Real-world hide & seek | `/hide-and-seek/` | Hide, chase objectives at real places, submit proof photos, race the clock. |
 | **Jetlag Mobile App** — Two-phone Jet Lag app | `/jetlag/` | Full hider/seeker flow with sync, push, cards, timers. |
 | **Jetlag Deduction Board** — Shared map console | `/deduction-board/` | Track clues, shrink the hiding area, sync rooms across devices. |
 
@@ -27,139 +27,100 @@ That's the whole lobby — it just navigates. Everything else lives in the three
 
 ---
 
-# 1. Urban Hunt
+# 1. Hide and Seek Companion
 
-A real-time, GPS field game. One **Admin** device runs the match; **Hiders** roam a
-shrinking play zone completing photo objectives while **Seekers** chase them using a
-*time-delayed* trail of where the hiders were. The server is authoritative and pushes
-live state over a websocket (Socket.IO).
+A real-world, proof-based hide and seek companion. One **Admin** device sets up and
+starts the match; **Hiders** race through a sequence of real-world objectives (sourced
+from OpenStreetMap via Overpass) and submit a photo + GPS proof at each one; **Seekers**
+watch the shared route and objective progress live and chase the hiders down in person.
+The server is authoritative and pushes live state over a websocket (Socket.IO). Objectives
+are only ever real places — the game will refuse to start rather than invent fake ones.
 
-**URL:** `/urban-hunt/`
-**Client:** `Urban Hunt/client/src/main.tsx` (React + Leaflet + Socket.IO)
+**URL:** `/hide-and-seek/`
+**Client:** `Hide and Seek Companion/client/src/main.tsx` (React + Leaflet + Socket.IO)
 
 ### 1.1 What the client stores on your device
 The app remembers you across reloads using `localStorage`:
 
-- `uh_role` — your role (`HIDER` / `SEEKER` / `ADMIN`)
-- `uh_name` — your call sign
-- `uh_player_id` + `uh_player_secret` — your identity; on reconnect the client
-  silently rejoins as the same player so GPS/heartbeat resume without a reload.
-  (Admins are **not** auto-rejoined — there is no stored PIN — so an admin who
-  refreshes must re-enter the PIN.)
-- `uh_pending_location` — the last GPS fix that hasn't been acknowledged by the
-  server yet, so a dropped packet is retried after a reconnect.
+- `hs_role` — your role (`HIDE` / `SEEK` / `ADMIN`)
+- `hs_name` — your display name
+- `hs_player_id` + `hs_player_secret` — your identity; on reconnect the client
+  silently rejoins as the same player. (Admins are **not** auto-rejoined — there is no
+  stored PIN — so an admin who refreshes must re-enter the PIN.)
 
-**Leaving** a game (the `<` back button) clears all of these and returns you to the lobby.
+There's no stored GPS fix — location is only ever read once, at the moment you submit a
+proof photo, never tracked continuously in the background.
 
 ### 1.2 The Lobby screen (joining)
-1. Type a **call sign** in "ENTER CALL SIGN".
-2. Tap **Hide** (complete objectives) or **Seek** (close the net) to join in that role.
-3. **Admin access:** tap the faint `... admin access ...` link, enter the **Admin PIN**,
-   and tap **Access** (or press Enter). The PIN is set server-side via the `ADMIN_PIN`
-   env var.
+1. Type your **name** — you're visible in the roster as soon as you join, before picking
+   a role.
+2. Tap **HIDE** (get to your objectives, don't get caught) or **SEEK** (track the route,
+   find the hiders) to pick your role, then tap **Ready Up**.
+3. **Admin access:** tap **Admin** at the bottom, enter the **Admin PIN**, and tap
+   **Access**. The PIN is set server-side via the `ADMIN_PIN` env var.
 
-After joining you land on **Waiting** (hiders/seekers) or the **Admin console** (admin).
+You stay on the Lobby screen (with the live roster) until the admin starts the game.
+**Start Game is blocked until every connected player has picked a role and readied up**,
+with at least one HIDE and one SEEK.
 
-### 1.3 Waiting screen
-Shows your role badge, your name, and the **Connected Devices** roster (who's joined and
-whether each is online/offline). You wait here until the admin starts the game.
+### 1.3 Admin panel
+After the PIN, the admin lands on the setup screen. Sections:
 
-### 1.4 Admin console
-The admin sets up and controls the entire match. Sections, top to bottom:
+- **Map**: drag the pin (or tap the map) to set the game's center point; a circle shows
+  the current radius.
+- **Map Radius** (500–5000 m), **Objective Count** (3 up to a live-computed max),
+  **Objective Spacing** (a min–max metre dual slider — how far apart consecutive
+  objectives are), **Total Game Time** (10–120 min).
+- **Objective Categories**: toggle any of 13 real-world categories — Parks, Pubs, Bars,
+  Restaurants, Cafes, Museums, Libraries, Cinemas, Shops, Golf Courses, Aquariums,
+  Hospitals, Train Stations.
+- A live **"~N objectives available in this area"** count, computed from the preloaded
+  OpenStreetMap data for the selected categories/radius/categories — not an estimate,
+  the actual number of real candidates on file.
+- **Lobby roster** and **Start Game**.
 
-- **Starting Zone** (setup only):
-  - **Longitude / Latitude** number fields for the zone origin.
-  - **Initial radius** slider (100–20000 m).
-  - **Pin Origin / Set Radius** toggle: choose a mode, then **tap the map**. "Pin Origin"
-    drops the zone center; "Set Radius" sets the radius as the distance from the origin to
-    your tap. (After pinning an origin it auto-switches to radius mode.)
-- **Game Settings** (live-editable sliders; changes broadcast immediately):
-  - **Objective spawn distance** (dual slider, min–max metres): how far from a hider new
-    objectives appear.
-  - **Game length** (minutes, `0` = no time limit). If the clock runs out with any hider
-    still free, **hiders win**.
-  - **Shrink** (%) and **Shrink interval** (s): the global play zone contracts by this
-    percentage every interval, pulling toward the seekers.
-  - **Ping interval** (min): how often seekers receive a fresh (delayed) hider position.
-  - **Delay** (min): how far *behind real time* the seekers' view of each hider is. This is
-    the core balance lever — seekers always chase a stale trail.
-  - **Lockdown every** (N pings), **Lockdown radius** (m), **Lockdown edge distance** (m),
-    **Lockdown duration** (s): periodically a bonus "lockdown" zone appears near a hider;
-    reaching it/claiming inside it scores extra.
-  - **Regular** and **Lockdown objective points**.
-- **Connected Devices** roster.
-- **Game Control** (while active): **Start** (resume), **Pause**, **End**.
-  Before the game starts instead you get **Start Game** and **Disconnect All**.
-- **Reset Everything** (danger): confirms, then ends any game, clears all players, wipes
-  game history, and sends every device back to the home screen.
-- **Map**: live Leaflet map (dark CARTO tiles) showing the safe zone, hider markers,
-  seeker markers, objectives, and lockdown circles. In setup it also handles your
-  origin/radius taps.
-- **Claim Evidence** (when claims exist): each claim shows the hider, status, points,
-  objective, distance, and the submitted **photo**. Admins can **Disallow** an accepted
-  claim (with a typed reason).
-- **Game History**: recent games with durations and per-player scores.
+If the chosen area has no preloaded map data (only the United Kingdom is preloaded today),
+the count shows `0` and starting fails with a clear message rather than inventing objectives.
 
-### 1.5 Hider screen
-A split view: **map on top, control panel below.**
+### 1.4 Countdown
+Once started, every connected device (admin included) sees the same server-driven
+3 → 2 → 1 → **GO** countdown before the match begins.
 
-- **Proximity to nearest seeker** — a status word (e.g. near / far) driven by the
-  configured `proximityThresholds`.
-- **Survive for** — the game countdown (if a time limit is set).
-- **Out of bounds** warning — if you leave the play zone, objectives lock until you return.
-- **Score**.
-- **Lockdown timers** — current lockdown remaining, or a "reach next lockdown" countdown,
-  plus a "next lockdown" forecast time.
-- **Objectives** (one card per active slot): the objective name, category, distance to it,
-  point value, and an expiry timer for lockdown objectives. The button reads
-  **Move Closer** (too far), **Out Of Bounds** (outside zone), or **Claim Objective**
-  (you're within `claimRadius`, default 40 m).
-- **Claim flow:** tapping **Claim Objective** opens the **Claim sheet**:
-  - Two readiness checks: **GPS** (`ready` when within range, else shows distance) and
-    **Photo** (`required` until captured).
-  - A camera input (`capture="environment"`, i.e. the rear camera) to take/upload a photo.
-  - **Confirm Claim** uploads the photo + your live coordinates to `/api/claims`. The server
-    re-verifies GPS freshness and distance; failures surface as readable messages
-    ("you are too far from the objective", "live GPS location is too old", etc.).
-- **I Have Been Caught** (danger button): a two-tap confirm ("Tap Again To Confirm",
-  armed for 5 s). Confirming converts you to a **Seeker** for the rest of the match and
-  posts your final score to the leaderboard. **When the last hider is caught, seekers win.**
-- **Zone shrink** timer at the bottom counts down to the next contraction.
+### 1.5 Hider Terminal
+- **Objective i of n** and the game **timer**.
+- An **objective card**: category, name, and a map pinned at its real coordinates.
+- **Upload Proof Photo**: pick/take a photo, see a preview with **Retake**/**Submit
+  Proof**. Submitting takes a one-shot GPS reading and uploads both — the server rejects
+  the proof if you're not actually within range of the objective. Success unlocks the
+  next objective ("Nice! Next objective unlocked.").
+- Once every objective is done: **"Final objective complete. Survive until the clock
+  runs out!"**
+- **I'VE BEEN CAUGHT** (danger button): a two-tap confirm ("Tap again to confirm").
+  Confirming ends your run — you see your own result immediately, even though the rest
+  of the match continues for other hiders/seekers until time runs out or every hider is
+  caught.
 
-The hider map shows: the global safe zone, your position, your objectives, your current/next
-lockdown circles, and your legal area (safe zone minus any active lockdown cut-out).
+### 1.6 Seeker Terminal
+- **{completed}/{total} found** and the game **timer**.
+- A map with the **full route** as a dashed line and numbered pins (upcoming / in
+  progress / done — done pins show a checkmark); tap a pin to fly to it.
+- A route list mirroring the map, with a status pill and (once completed) the in-game
+  time each objective was reached.
+- Every proof a hider submits updates this screen live.
 
-### 1.6 Seeker screen
-Also map + panel.
+### 1.7 Game End
+Shows the headline (**CAUGHT!** or **TIME'S UP**), time elapsed, total objectives, a
+per-hider breakdown (objectives reached, caught or not), and a gallery of every
+submitted proof photo. The admin gets a **Play Again** button, which resets everyone
+back to the Lobby.
 
-- **Time left** (if a limit is set).
-- **Hider signals**: one row per hider showing name, the *capture time* of the shown
-  position, and their active objectives. **Seekers only ever see a delayed position and a
-  delayed trail** — never the hider's live location.
-- The map draws seeker markers (live), each hider's **delayed** marker + trail, lockdown
-  circles, objectives, and the safe zone.
-
-**Note:** if you're caught as a hider you're automatically flipped to a seeker — the client
-detects the seeker-only broadcast, updates your role + storage, and switches you to this
-screen so a refresh rejoins correctly.
-
-### 1.7 Game Over screen
-Shows the **winner** ("HIDERS win" / "SEEKERS win"), total game time, the **Leaderboard**
-(ranked by score), and — for the admin — claim evidence and game history. Tap `<` to leave.
-The admin stays on their console instead, ready to start the next game.
-
-### 1.8 GPS & notifications (client behaviour)
-- While you're a hider or seeker the client continuously watches your location and streams
-  it to the server, retrying any unsent fix (`uh_pending_location`) until acknowledged. A
-  30-second heartbeat keeps your "online" status fresh.
-- On native builds it uses a **background geolocation** plugin so GPS keeps flowing with the
-  screen off; in a plain browser it uses `navigator.geolocation.watchPosition` with high
-  accuracy. **Live GPS is mandatory** — without it you can't play or claim.
-- If the server has **demo location** enabled, a simulated location is used when real GPS is
-  unavailable (it drifts toward your objective/target). This is a dev/testing aid only.
-- **Push notifications:** once you have an identity the app registers a service worker and a
-  Web Push subscription, so you get alerts (e.g. "a new lockdown zone appeared") even with
-  the app closed or the screen locked. Grant the notification permission when asked.
+### 1.8 GPS behaviour (client behaviour)
+- Location is **never tracked continuously** and never sent to the server except as a
+  single reading attached to a proof-photo submission — there's no background GPS, no
+  live seeker tracking of hiders, and no push notifications.
+- The one-shot read uses the device's native location permission (via Capacitor on a
+  packaged app, or the browser's location prompt on the web); grant it when a hider
+  submits their first proof.
 
 ---
 
@@ -418,16 +379,16 @@ questions are instant and don't re-download. Some data is preloaded for common r
 
 ## Quick reference
 
-| | Urban Hunt | Jetlag Mobile App | Deduction Board |
+| | Hide and Seek Companion | Jetlag Mobile App | Deduction Board |
 |---|---|---|---|
-| **URL** | `/urban-hunt/` | `/jetlag/` | `/deduction-board/` |
+| **URL** | `/hide-and-seek/` | `/jetlag/` | `/deduction-board/` |
 | **Players** | Many: 1 admin + hiders + seekers | Exactly 2 phones (A/B) | 1–2 phones (shared room) |
 | **Roles** | Hide / Seek / Admin | Hider / Seeker (+ admin code) | None |
 | **Admin gate** | Server **Admin PIN** | Code **6789** | — |
-| **Live GPS** | Required (background on native) | Used for answers/questions | Optional (Use GPS) |
+| **Live GPS** | One-shot, only at proof submission | Used for answers/questions | Optional (Use GPS) |
 | **Sync** | Socket.IO, server-authoritative | Websocket relay (A↔B) | Websocket rooms (`#room=`) |
-| **Push** | Web Push + native | Web/native push | None |
-| **Win** | Last hider caught → seekers; time out → hiders | Longest time hidden (leaderboard) | — (a tracking tool) |
+| **Push** | None | Web/native push | None |
+| **Win** | Survive the clock, or last hider caught | Longest time hidden (leaderboard) | — (a tracking tool) |
 
 > **Tip:** open all three from the lobby at the site root. For anything GPS- or
 > push-related, use HTTPS and grant the location and notification permissions when the

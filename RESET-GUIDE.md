@@ -18,8 +18,8 @@ There are two levels of reset:
 > the phones hold the real state in `localStorage`/IndexedDB and re-seed the
 > server when they reconnect. Wiping the server alone is **not** enough for those
 > two; you must also reset the phones (Level 1 in-app reset, or clear the browser
-> storage). Urban Hunt is **server-authoritative**, so wiping the server is the
-> source of truth there.
+> storage). Hide and Seek Companion is **server-authoritative**, so wiping the server is
+> the source of truth there.
 
 ---
 
@@ -27,28 +27,24 @@ There are two levels of reset:
 
 | App | Live/server state | Persisted on disk (server) | On the phone (browser) |
 |-----|-------------------|----------------------------|------------------------|
-| **Urban Hunt** (`/urban-hunt/`) | In `data/state.json`, or Redis key `urban-hunt:state` if `REDIS_URL` set | `data/state.json`, `data/history.json`, `data/uploads/<gameId>/*` (claim photos); Postgres `claims` + `pois` tables if `DATABASE_URL` set | `localStorage`: `uh_role`, `uh_name`, `uh_player_id`, `uh_player_secret`, `uh_pending_location` |
+| **Hide and Seek Companion** (`/hide-and-seek/`) | In `data/state.json` | `data/state.json`, `data/uploads/<gameId>/*` (proof photos); `server/data/poi-cache/<region>/*.json` (preloaded Overpass POIs — not game state, safe to keep) | `localStorage`: `hs_role`, `hs_name`, `hs_player_id`, `hs_player_secret` |
 | **Jetlag Mobile** (`/jetlag/`) | `gameState` in memory only (lost on restart, re-seeded by phones) | `push-subs.json`, `native-push-tokens.json`, `vapid.json` (push only — not game data) | `localStorage`: `jetlag_state_v4` (game), `jetlag_device_v1` (Phone A/B); IndexedDB `jetlag-cache` (map data) |
 | **Deduction Board** (`/deduction-board/`) | Per-room files | `server/state/<roomId>.json` (one per room) | `localStorage`: `jetlag-deduction-v1`; IndexedDB `jetlag-game-state` (board) + `jetlag-cache` (map data); room code in the URL `#room=` |
 
 The deployment layout (per `deploy/README.md`) on the VPS is
-`/var/www/minigame-library`, with services `urban-hunt`, `jetlag-mobile-server`,
+`/var/www/minigame-library`, with services `hide-and-seek`, `jetlag-mobile-server`,
 and `jetlag-deduction-server` managed by systemd.
 
 ---
 
 ## Level 1 — In-app reset (between games)
 
-### Urban Hunt
-1. Join as **Admin** (lobby → `... admin access ...` → enter the **Admin PIN**).
-2. In the admin console, scroll to **Reset Everything** (danger).
-3. Confirm. This ends any game, clears all players, wipes game history, and
-   sends every device back to the home screen (`force_reset`).
-   - The admin-configured **Starting Zone and Game Settings are intentionally
-     kept** so they carry into the next game. To change those, edit them before
-     starting the next round.
-   - History is only cleared if the reset is sent with the "clear history"
-     option (the danger reset does clear it).
+### Hide and Seek Companion
+1. Join as **Admin** (lobby → **Admin** → enter the **Admin PIN**).
+2. On the **Game End** screen (or the admin panel), tap **Play Again**.
+3. This ends any game in progress and sends every device back to the Lobby
+   (`force_reset`). Roles are cleared and players must ready up again; the
+   admin's map/radius/objective/category settings carry into the next round.
 
 ### Jetlag Mobile App
 1. Tap the **admin (gear) icon** on any screen → enter `6789`.
@@ -76,26 +72,20 @@ Adjust the base path if you didn't deploy to `/var/www/minigame-library`.
 
 ### Step 1 — Stop the services
 ```bash
-sudo systemctl stop urban-hunt jetlag-mobile-server jetlag-deduction-server
+sudo systemctl stop hide-and-seek jetlag-mobile-server jetlag-deduction-server
 ```
 
-### Step 2 — Wipe Urban Hunt (server-authoritative)
+### Step 2 — Wipe Hide and Seek Companion (server-authoritative)
 ```bash
-cd "/var/www/minigame-library/Urban Hunt"
+cd "/var/www/minigame-library/Hide and Seek Companion"
 
-# Game state, history, and all uploaded claim photos
-rm -f  data/state.json data/history.json
+# Game state and all uploaded proof photos
+rm -f  data/state.json
 rm -rf data/uploads/*
-
-# If Redis is the state backend (REDIS_URL set in urban-hunt.service):
-redis-cli DEL urban-hunt:state
-
-# If Postgres is configured (DATABASE_URL set), clear claims (and POIs if you
-# want a clean objective cache — POIs will repopulate from Overpass on demand):
-psql "$DATABASE_URL" -c "TRUNCATE claims;"
-# psql "$DATABASE_URL" -c "TRUNCATE pois;"   # optional
 ```
-Leave `vapid keys`/push files in place unless you want players to re-subscribe.
+Leave `server/data/poi-cache/` in place — it's the preloaded Overpass POI cache, not
+game state, and repopulating it means re-running `npm run preload:pois` against the
+public Overpass API.
 
 ### Step 3 — Wipe Jetlag Mobile App
 The game state is in memory, so a restart clears it. Only push files persist:
@@ -121,8 +111,8 @@ rm -rf state/*    # deletes every saved room (state/<roomId>.json)
 
 ### Step 5 — Restart
 ```bash
-sudo systemctl start urban-hunt jetlag-mobile-server jetlag-deduction-server
-sudo systemctl status urban-hunt jetlag-mobile-server jetlag-deduction-server --no-pager
+sudo systemctl start hide-and-seek jetlag-mobile-server jetlag-deduction-server
+sudo systemctl status hide-and-seek jetlag-mobile-server jetlag-deduction-server --no-pager
 ```
 
 ### One-shot script
@@ -131,13 +121,11 @@ sudo systemctl status urban-hunt jetlag-mobile-server jetlag-deduction-server --
 set -euo pipefail
 BASE="/var/www/minigame-library"
 
-sudo systemctl stop urban-hunt jetlag-mobile-server jetlag-deduction-server
+sudo systemctl stop hide-and-seek jetlag-mobile-server jetlag-deduction-server
 
-# Urban Hunt
-rm -f  "$BASE/Urban Hunt/data/state.json" "$BASE/Urban Hunt/data/history.json"
-rm -rf "$BASE/Urban Hunt/data/uploads/"*
-# redis-cli DEL urban-hunt:state                       # if REDIS_URL set
-# psql "$DATABASE_URL" -c "TRUNCATE claims;"           # if DATABASE_URL set
+# Hide and Seek Companion
+rm -f  "$BASE/Hide and Seek Companion/data/state.json"
+rm -rf "$BASE/Hide and Seek Companion/data/uploads/"*
 
 # Jetlag Mobile (push only; state is in-memory)
 rm -f "$BASE/Jetlag Mobile App/server/push-subs.json" \
@@ -146,7 +134,7 @@ rm -f "$BASE/Jetlag Mobile App/server/push-subs.json" \
 # Deduction Board (all rooms)
 rm -rf "$BASE/jetlag-deduction-board/server/state/"*
 
-sudo systemctl start urban-hunt jetlag-mobile-server jetlag-deduction-server
+sudo systemctl start hide-and-seek jetlag-mobile-server jetlag-deduction-server
 echo "All three apps reset. Remember to clear the phones for Jetlag + Deduction."
 ```
 
@@ -155,10 +143,13 @@ echo "All three apps reset. Remember to clear the phones for Jetlag + Deduction.
 ## Per-phone (client) reset
 
 Required for **Jetlag Mobile** and **Deduction Board** (client-authoritative);
-optional cleanup for **Urban Hunt**.
+optional cleanup for **Hide and Seek Companion**.
 
 **Easiest:** in each app use its in-app reset/leave control —
-- Urban Hunt: the `<` **back** button clears all `uh_*` keys and returns to the lobby.
+- Hide and Seek Companion: admin's **Play Again** clears the shared server-side
+  role/ready state for every connected device and returns everyone to the Lobby (it
+  doesn't touch each phone's stored `hs_*` identity — that's fine, it's just used to
+  silently rejoin the same player next time).
 - Jetlag: Admin → **Kick all devices off** (returns to the device gate).
 - Deduction: **Reset map**.
 
@@ -181,7 +172,7 @@ Data** and remove the site, or remove and re-add the PWA from the home screen.
 
 ## Quick checklist
 
-- [ ] Urban Hunt: admin **Reset Everything** (or wipe `data/state.json`, `data/history.json`, `data/uploads/`, Redis key, `claims` table).
+- [ ] Hide and Seek Companion: admin **Play Again** (or wipe `data/state.json`, `data/uploads/`).
 - [ ] Jetlag Mobile: admin **Reset entire game** + **Kick all devices off**, restart server, **clear both phones** (`jetlag_state_v4`, `jetlag_device_v1`).
 - [ ] Deduction Board: **Reset map**, delete `server/state/*`, **clear phones** (`jetlag-deduction-v1`, IndexedDB `jetlag-game-state`).
 - [ ] (Optional) Drop push subscriptions so devices re-register.
