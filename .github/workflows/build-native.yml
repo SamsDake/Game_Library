@@ -147,11 +147,21 @@ jobs:
 
       - name: Install deps and build web client
         working-directory: Jetlag Mobile App
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.JETLAG_GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
           npm install
-          VITE_SERVER_URL=https://comicsams.cloud/jetlag-api \
-          VITE_WS_URL=wss://comicsams.cloud/jetlag-ws \
-          npm run build
+          if [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            VITE_NATIVE_PUSH_ENABLED=true \
+            VITE_SERVER_URL=https://comicsams.cloud/jetlag-api \
+            VITE_WS_URL=wss://comicsams.cloud/jetlag-ws \
+            npm run build
+          else
+            VITE_NATIVE_PUSH_ENABLED=false \
+            VITE_SERVER_URL=https://comicsams.cloud/jetlag-api \
+            VITE_WS_URL=wss://comicsams.cloud/jetlag-ws \
+            npm run build
+          fi
 
       - name: Add and sync Android platform
         working-directory: Jetlag Mobile App
@@ -220,6 +230,7 @@ jobs:
         working-directory: Jetlag Mobile App
         run: |
           npm install
+          VITE_NATIVE_PUSH_ENABLED=true \
           VITE_SERVER_URL=https://comicsams.cloud/jetlag-api \
           VITE_WS_URL=wss://comicsams.cloud/jetlag-ws \
           npm run build

@@ -6,7 +6,7 @@
 // load them instantly with no network calls during a game.
 //
 // Usage:
-//   node scripts/preload-data.js                       # default: NL,BE,LU,FR,DE
+//   node scripts/preload-data.js                       # default: NL,BE,LU,FR,DE,GB
 //   node scripts/preload-data.js --countries NL,BE     # custom set (ISO-3166-1 alpha-2)
 //   node scripts/preload-data.js --features airport,station,hospital
 //   node scripts/preload-data.js --admin 4,6,8         # which admin levels to grab
@@ -82,6 +82,11 @@ const FEATURES = {
 // ISO alpha-2 → name (for logging). Overpass resolves the area by ISO code.
 const COUNTRY_NAMES = {
   NL: 'Netherlands', BE: 'Belgium', LU: 'Luxembourg', FR: 'France', DE: 'Germany',
+  GB: 'United Kingdom',
+};
+
+const COUNTRY_ALIASES = {
+  UK: 'GB',
 };
 
 // ---- CLI parsing ----
@@ -89,7 +94,10 @@ function arg(name, fallback) {
   const i = process.argv.indexOf('--' + name);
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
-const COUNTRIES = arg('countries', 'NL,BE,LU,FR,DE').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
+const COUNTRIES = arg('countries', 'NL,BE,LU,FR,DE,GB')
+  .split(',')
+  .map((s) => COUNTRY_ALIASES[s.trim().toUpperCase()] || s.trim().toUpperCase())
+  .filter(Boolean);
 const FEATURE_KEYS = arg('features', Object.keys(FEATURES).join(',')).split(',').map((s) => s.trim()).filter(Boolean);
 const ADMIN_LEVELS = arg('admin', '4,6').split(',').map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
 // --force re-fetches even countries that already have a saved part file.
@@ -294,6 +302,7 @@ function mergeAllParts(key) {
 const COUNTRY_BBOX = {
   NL: [3.3, 50.7, 7.3, 53.6], BE: [2.5, 49.4, 6.5, 51.6], LU: [5.7, 49.4, 6.6, 50.2],
   FR: [-5.2, 41.3, 9.6, 51.1], DE: [5.8, 47.2, 15.1, 55.1],
+  GB: [-8.7, 49.8, 1.9, 60.9],
 };
 
 // Run a feature query against an explicit bbox (used by the tile-split fallback

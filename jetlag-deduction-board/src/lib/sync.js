@@ -22,6 +22,8 @@ let _roomId = null;
 let _onRemote = null;    // (data: {selectedIds, seeker, clues}) => void
 let _onStatus = null;    // ('connecting' | 'connected' | 'disconnected') => void
 let _retryTimer = null;
+let _lastState = null;
+let _readyToPush = false;
 
 function setStatus(s) {
   _onStatus?.(s);
@@ -32,6 +34,7 @@ function connect() {
   if (_ws && (_ws.readyState === 0 || _ws.readyState === 1)) return; // already open/connecting
 
   setStatus('connecting');
+  _readyToPush = false;
   _ws = new WebSocket(`${WS_URL}/room/${_roomId}`);
 
   _ws.onopen = () => {
@@ -42,7 +45,13 @@ function connect() {
   _ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
-      if (msg.type === 'state' && _onRemote) _onRemote(msg.data);
+      if (msg.type === 'state') {
+        _readyToPush = true;
+        if (_onRemote) _onRemote(msg.data);
+      } else if (msg.type === 'empty') {
+        _readyToPush = true;
+        if (_lastState) pushState(_lastState);
+      }
     } catch { /* malformed message, ignore */ }
   };
 
@@ -64,7 +73,8 @@ export function initSync(roomId, onRemote, onStatus) {
 
 // Called by store.persist after every local state change.
 export function pushState(data) {
-  if (_ws?.readyState === 1 /* OPEN */) {
+  _lastState = data;
+  if (_readyToPush && _ws?.readyState === 1 /* OPEN */) {
     _ws.send(JSON.stringify({ type: 'state', data }));
   }
 }

@@ -1,6 +1,6 @@
 // store.js — Zustand game store (v3 design + Leaflet map state)
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { CAT_BY_ID, DECK_BY_ID, DEFAULT_DECK_CONFIG, buildDeck, SEED_LEADERBOARD, optionLabel } from './data.js';
+import { CATEGORIES, CAT_BY_ID, DECK_BY_ID, DEFAULT_DECK_CONFIG, buildDeck, SEED_LEADERBOARD, optionLabel, MAX_HAND } from './data.js';
 import { applyClue, computeConstraint, bisectorHalfPlane } from './geometry.js';
 
 const LS_KEY = 'jetlag_state_v4';
@@ -42,6 +42,7 @@ function freshState(cfg) {
     activeQuestion: null,
     questionLog: [],
     effects: [],
+    spottyMemoryCat: null,
     conditionalBonuses: [],
     photos: [],
     notifications: [],
@@ -66,6 +67,8 @@ function loadState(cfg) {
       if (!s.deck) s.deck = buildDeck(s.deckConfig);
       if (!s.notifications) s.notifications = [];
       if (!s.asked) s.asked = {};
+      if (!('spottyMemoryCat' in s)) s.spottyMemoryCat = null;
+      if (!s.spottyMemoryCat && s.effects?.some(e => e.cardId === 'spotty_memory')) s.spottyMemoryCat = randomQuestionCategory();
       if (!s.map) s.map = freshMapState();
       if (!s.map.selectedCountryIds) s.map.selectedCountryIds = [];
       if (!s.map.cuts) s.map.cuts = [];
@@ -102,6 +105,18 @@ function drawCards(deck, n, cfg) {
     cards.push({ uid: uid(), cardId: d.pop() });
   }
   return { cards, deck: d };
+}
+
+function randomQuestionCategory() {
+  return CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)]?.id || null;
+}
+
+function hasSpottyMemory(s) {
+  return s.effects.some(e => e.cardId === 'spotty_memory');
+}
+
+function nextSpottyMemoryCat(s) {
+  return hasSpottyMemory(s) ? randomQuestionCategory() : null;
 }
 
 // Recompute currentZone from baseZone + all cuts
@@ -195,6 +210,7 @@ export function useGameStore(cfg) {
       const instruction = cat.id === 'photo' ? cat.options[optIndex].note : '';
       const qid = uid();
       patch(s => {
+        if (s.spottyMemoryCat === catId) return s;
         const pausedTotal = s.pausedAccum + (s.paused && !s.huntFrozenAt && s.pausedAt ? Date.now() - s.pausedAt : 0);
         const activeTime = Date.now() - pausedTotal;
         // The seeker's GPS is already captured at ask time, so auto-share it as p1
@@ -214,6 +230,7 @@ export function useGameStore(cfg) {
           mapPin: s.map.pin,
         };
         return { ...s, activeQuestion: aq,
+          spottyMemoryCat: nextSpottyMemoryCat(s),
           asked: isCustom ? s.asked : { ...s.asked, [`${catId}:${optIndex}`]: true },
           feed: logIn(s, `Seeker asked: "${text}"`),
           notifications: notif(s, 'hider', 'New question', text) };
@@ -291,7 +308,7 @@ export function useGameStore(cfg) {
     },
 
     resolveDraw(finalHand, keptCount) {
-      patch(s => ({ ...s, hand: finalHand.slice(-12), pendingDraw: null, feed: logIn(s, `Hiders kept ${keptCount} card${keptCount === 1 ? '' : 's'}.`) }));
+      patch(s => ({ ...s, hand: finalHand.slice(-MAX_HAND), pendingDraw: null, feed: logIn(s, `Hiders kept ${keptCount} card${keptCount === 1 ? '' : 's'}.`) }));
     },
 
     playCard(cardUid, costDiscards) {
@@ -314,13 +331,14 @@ export function useGameStore(cfg) {
           effects = [{ uid: effUid, cardId: card.id, type: 'curse', title: card.title, text: card.text,
             playedAt: Date.now(), playedAtActiveTime: activeTime, block: !!card.block, duration: card.duration || null, persist: !!card.persist,
             needsProof: !!card.block, proofUid: null }, ...effects];
+          const spottyMemoryCat = card.id === 'spotty_memory' ? randomQuestionCategory() : s.spottyMemoryCat;
           if (card.id === 'impressionable') s = { ...s, freeQuestion: 1 };
           const conditionalBonuses = card.bonusCondition
             ? [...(s.conditionalBonuses || []), { uid: effUid, cardId: card.id, title: card.title, min: card.bonusCondition.min, question: card.bonusCondition.text, applies: null }]
             : (s.conditionalBonuses || []);
           notifications = notif(s, 'seeker', 'Curse played', card.title);
           feed = logIn(s, `Hiders played "${card.title}"${paid}.`);
-          return { ...s, bonusMs, effects, conditionalBonuses, drawBonus, notifications, feed, hand: s.hand.filter(h => !remove.has(h.uid)) };
+          return { ...s, bonusMs, effects, spottyMemoryCat, conditionalBonuses, drawBonus, notifications, feed, hand: s.hand.filter(h => !remove.has(h.uid)) };
         } else { feed = logIn(s, `Hiders played "${card.title}"${paid}.`); }
         return { ...s, bonusMs, effects, drawBonus, notifications, feed, hand: s.hand.filter(h => !remove.has(h.uid)) };
       });
@@ -340,8 +358,11 @@ export function useGameStore(cfg) {
       patch(s => {
         const aq = s.activeQuestion; if (!aq) return s;
         const cat = CAT_BY_ID[aq.catId];
-        const pool = cat.options.map((_, i) => i).filter(i => !(cat.id === 'radar' && cat.options[i] === 'CUSTOM') && !s.asked[`${cat.id}:${i}`]);
-        const idx = pool.length ? pool[Math.floor(Math.random() * pool.length)] : Math.floor(Math.random() * cat.options.length);
+        const randomizable = cat.options.map((_, i) => i).filter(i => !(cat.id === 'radar' && cat.options[i] === 'CUSTOM'));
+        const pool = randomizable.filter(i => !s.asked[`${cat.id}:${i}`]);
+        const fallback = randomizable.length ? randomizable : cat.options.map((_, i) => i);
+        const source = pool.length ? pool : fallback;
+        const idx = source[Math.floor(Math.random() * source.length)];
         const opt = cat.options[idx];
         const optStr = optionLabel(cat, opt);
         const text = cat.make(typeof opt === 'object' ? opt : optStr);
@@ -370,14 +391,14 @@ export function useGameStore(cfg) {
       patch(s => {
         const remove = new Set([cardUid, ...discardUids]);
         const { cards, deck } = drawCards(s.deck, card.drawN, s.deckConfig);
-        return { ...s, deck, hand: [...s.hand.filter(h => !remove.has(h.uid)), ...cards].slice(-12), feed: logIn(s, `Hiders discarded ${discardUids.length} and drew ${card.drawN}.`) };
+        return { ...s, deck, hand: [...s.hand.filter(h => !remove.has(h.uid)), ...cards].slice(-MAX_HAND), feed: logIn(s, `Hiders discarded ${discardUids.length} and drew ${card.drawN}.`) };
       });
     },
 
     duplicateCard(cardUid, targetUid) {
       patch(s => {
         const target = s.hand.find(h => h.uid === targetUid); if (!target) return s;
-        return { ...s, hand: [...s.hand.filter(h => h.uid !== cardUid), { uid: uid(), cardId: target.cardId }].slice(-12), feed: logIn(s, 'Hiders duplicated a card.') };
+        return { ...s, hand: [...s.hand.filter(h => h.uid !== cardUid), { uid: uid(), cardId: target.cardId }].slice(-MAX_HAND), feed: logIn(s, 'Hiders duplicated a card.') };
       });
     },
 
@@ -393,7 +414,13 @@ export function useGameStore(cfg) {
       });
     },
 
-    clearEffect(effectUid) { patch(s => ({ ...s, effects: s.effects.filter(e => e.uid !== effectUid) })); },
+    clearEffect(effectUid) {
+      patch(s => {
+        const effects = s.effects.filter(e => e.uid !== effectUid);
+        const spottyMemoryCat = effects.some(e => e.cardId === 'spotty_memory') ? s.spottyMemoryCat : null;
+        return { ...s, effects, spottyMemoryCat };
+      });
+    },
     discardCard(cardUid) { patch(s => ({ ...s, hand: s.hand.filter(h => h.uid !== cardUid) })); },
     dismissNotification(nUid) { patch(s => ({ ...s, notifications: s.notifications.filter(n => n.uid !== nUid) })); },
 
@@ -412,7 +439,7 @@ export function useGameStore(cfg) {
     mapAddClue({ mode, geometry, label, kind, meta, qid = null, enabled }) {
       patch(s => {
         const isConfirmed = qid != null;
-        const on = enabled !== undefined ? enabled : true; // confirmed & preview both default on
+        const on = enabled !== undefined ? enabled : isConfirmed;
         const cut = { id: uid(), qid, kind: kind || 'deduce', label, polygon: geometry, mode, meta, enabled: on };
         const map = recomputeZone({ ...s.map, cuts: [...s.map.cuts, cut] });
         return { ...s, map, feed: logIn(s, isConfirmed ? `Confirmed: ${label}` : `Seeker preview: ${label}`) };
@@ -484,10 +511,31 @@ export function useGameStore(cfg) {
     setPhase(phase) {
       patch(s => {
         const n = { ...s, phase };
-        if (phase === 'countdown' && !s.countdownEndsAt) n.countdownEndsAt = Date.now() + s.countdownMs;
-        if (phase === 'hunt' && !s.huntStartedAt) n.huntStartedAt = Date.now();
-        if (phase === 'hunt') n.huntFrozenAt = null;
-        if (phase === 'found') n.huntFrozenAt = Date.now();
+        const now = Date.now();
+        if (phase === 'lobby') {
+          n.countdownEndsAt = null;
+          n.huntStartedAt = null;
+          n.huntFrozenAt = null;
+          n.relocateEndsAt = null;
+          n.paused = false;
+          n.pausedAt = null;
+          n.pausedAccum = 0;
+        }
+        if (phase === 'countdown') {
+          n.countdownEndsAt = now + s.countdownMs;
+          n.huntStartedAt = null;
+          n.huntFrozenAt = null;
+          n.relocateEndsAt = null;
+          n.paused = false;
+          n.pausedAt = null;
+          n.pausedAccum = 0;
+        }
+        if (phase === 'hunt') {
+          n.countdownEndsAt = now;
+          if (!s.huntStartedAt) n.huntStartedAt = now;
+          n.huntFrozenAt = null;
+        }
+        if (phase === 'found') n.huntFrozenAt = now;
         n.feed = logIn(s, `Admin set state → ${phase}.`);
         return n;
       });
@@ -499,7 +547,7 @@ export function useGameStore(cfg) {
     },
     adjustCountdown(d) { patch(s => s.countdownEndsAt ? { ...s, countdownEndsAt: s.countdownEndsAt + d * 60000 } : { ...s, countdownMs: Math.max(0, s.countdownMs + d * 60000) }); },
     adjustHide(d) { patch(s => ({ ...s, bonusMs: s.bonusMs + d * 60000, feed: logIn(s, `Admin ${d >= 0 ? 'added' : 'removed'} ${Math.abs(d)} min of hide time.`) })); },
-    giveCard(cardId) { patch(s => ({ ...s, hand: [...s.hand, { uid: uid(), cardId }].slice(-12), feed: logIn(s, 'Admin gave a card.') })); },
+    giveCard(cardId) { patch(s => ({ ...s, hand: [...s.hand, { uid: uid(), cardId }].slice(-MAX_HAND), feed: logIn(s, 'Admin gave a card.') })); },
     clearHand() { patch(s => ({ ...s, hand: [], feed: logIn(s, 'Admin cleared the hand.') })); },
     removeLeader(i) { patch(s => ({ ...s, leaderboard: s.leaderboard.filter((_, j) => j !== i) })); },
     clearLeaderboard() { patch(s => ({ ...s, leaderboard: [] })); },
