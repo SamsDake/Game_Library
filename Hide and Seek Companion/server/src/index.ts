@@ -80,7 +80,6 @@ const allowedImageMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", 
 const allowedImageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"]);
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter(_req, file, cb) {
     const ext = path.extname(file.originalname || "").toLowerCase();
     if (!allowedImageMimeTypes.has(file.mimetype) || !allowedImageExtensions.has(ext)) {
@@ -132,11 +131,7 @@ app.get("/api/objectives/estimate", (req: Request, res: Response) => {
 app.post("/api/proofs", (req, res) => {
   uploadProofPhoto(req, res, err => {
     if (err) {
-      const error = err instanceof multer.MulterError
-        ? (err.code === "LIMIT_FILE_SIZE" ? "photo_too_large" : "invalid_photo")
-        : err instanceof Error && err.message === "invalid_photo_type"
-          ? "invalid_photo_type"
-          : "invalid_photo";
+      const error = err instanceof Error && err.message === "invalid_photo_type" ? "invalid_photo_type" : "invalid_photo";
       res.status(400).json({ ok: false, error });
       return;
     }
