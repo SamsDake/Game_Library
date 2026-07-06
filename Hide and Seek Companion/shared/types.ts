@@ -86,7 +86,7 @@ export interface HiderRunState {
   proofs: ProofRecord[];
 }
 
-export type EndReason = "caught" | "time_up" | "admin_ended";
+export type EndReason = "caught" | "time_up" | "admin_ended" | "objectives_complete";
 
 export interface GameState {
   id: string;

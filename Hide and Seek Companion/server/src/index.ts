@@ -181,6 +181,7 @@ function handleProof(req: Request, res: Response) {
 
   saveState();
   io.emit("proof_accepted", { proof, hiderId: playerId });
+  if (Object.values(game.hiders).every(h => h.caughtAt || h.objectiveIndex >= game.route.length)) finishGame("objectives_complete");
   res.json({ ok: true, proof, nextObjectiveIndex: hider.objectiveIndex, allDone: hider.objectiveIndex >= game.route.length });
 }
 
@@ -482,7 +483,7 @@ function completedAtFor(game: GameState, index: number): number | null {
   return Math.round((proof.submittedAt - game.startedAt) / 1000);
 }
 
-function finishGame(endReason: "caught" | "time_up" | "admin_ended") {
+function finishGame(endReason: "caught" | "time_up" | "admin_ended" | "objectives_complete") {
   const game = state.game;
   if (!game || game.phase === "ended") return;
   game.phase = "ended";
