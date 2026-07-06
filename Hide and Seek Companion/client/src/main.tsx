@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { io, Socket } from "socket.io-client";
 import "./styles.css";
 import { apiUrl, socketIoPath, socketServerUrl } from "./api";
-import { getCurrentCoordinates } from "./native-location";
 import type {
   CountdownTickPayload,
   GameConfig,
@@ -207,19 +206,10 @@ function App() {
   }
 
   async function submitProof(objectiveIndex: number, photo: File): Promise<{ ok: boolean; error?: string }> {
-    let coords;
-    try {
-      coords = await getCurrentCoordinates();
-    } catch {
-      setMessage("Location permission is required to submit proof.");
-      return { ok: false, error: "location_unavailable" };
-    }
     const form = new FormData();
     form.append("playerId", playerId);
     form.append("playerSecret", playerSecret);
     form.append("objectiveIndex", String(objectiveIndex));
-    form.append("lng", String(coords[0]));
-    form.append("lat", String(coords[1]));
     form.append("photo", photo);
     try {
       const response = await fetch(apiUrl("/api/proofs"), { method: "POST", body: form });
@@ -288,8 +278,6 @@ function startErrorText(error: string) {
 
 function proofErrorText(error: string) {
   const labels: Record<string, string> = {
-    too_far_from_objective: "you are too far from the objective",
-    location_unavailable: "location unavailable",
     invalid_photo_type: "photo must be a JPG, PNG, WebP, HEIC, or HEIF image",
     photo_too_large: "photo is too large",
     objective_changed: "objective changed; reload and try again",

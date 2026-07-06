@@ -20,7 +20,6 @@ import type {
   SetReadyPayload
 } from "../../shared/types";
 import { OBJECTIVE_CATEGORIES } from "../../shared/poi-categories";
-import { distanceMeters } from "./geo";
 import { StateStore } from "./state-store";
 import { estimateAvailable, loadedRegions, loadRegions } from "./poi-index";
 import { generateRoute } from "./route-gen";
@@ -33,7 +32,6 @@ const UPLOAD_DIR = path.resolve(ROOT, process.env.UPLOAD_DIR || "data/uploads");
 const STATE_FILE = path.resolve(ROOT, process.env.STATE_FILE || "data/state.json");
 const CLIENT_DIST = path.resolve(ROOT, "client/dist");
 const PUBLIC_BASE_PATH = normalizeBasePath(process.env.APP_BASE_PATH || "/hide-and-seek/");
-const CLAIM_RADIUS_M = 40;
 const PLAYER_STALE_SWEEP_MS = 10 * 1000;
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -147,7 +145,7 @@ app.post("/api/proofs", (req, res) => {
 });
 
 function handleProof(req: Request, res: Response) {
-  const { playerId, playerSecret, lat, lng } = req.body;
+  const { playerId, playerSecret } = req.body;
   const objectiveIndex = Number(req.body.objectiveIndex);
   const player = state.players[playerId];
   const game = state.game;
@@ -166,11 +164,6 @@ function handleProof(req: Request, res: Response) {
   if (!Number.isFinite(objectiveIndex) || objectiveIndex !== hider.objectiveIndex) return fail(409, "objective_changed");
   const objective = game.route[objectiveIndex];
   if (!objective) return fail(409, "no_current_objective");
-  const latNum = Number(lat);
-  const lngNum = Number(lng);
-  if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) return fail(422, "location_unavailable");
-  const distance = distanceMeters([lngNum, latNum], objective.coordinates);
-  if (distance > CLAIM_RADIUS_M) return fail(422, "too_far_from_objective");
 
   const proofId = path.basename(req.file.filename, path.extname(req.file.filename));
   const proof: ProofRecord = {
