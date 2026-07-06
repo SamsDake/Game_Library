@@ -348,6 +348,7 @@ io.on("connection", socket => {
     stopCountdown();
     state.phase = "lobby";
     state.game = null;
+    removeOfflinePlayers(true);
     for (const player of Object.values(state.players)) {
       if (player.role === "ADMIN") continue;
       player.role = null;
@@ -522,10 +523,10 @@ function roster(): PlayerPublic[] {
   }));
 }
 
-function removeOfflinePlayers() {
+function removeOfflinePlayers(includeAdmins = false) {
   let removed = 0;
   for (const player of Object.values(state.players)) {
-    if (player.role === "ADMIN") continue;
+    if (player.role === "ADMIN" && !includeAdmins) continue;
     const liveSockets = player.sockets.filter(socketId => io.sockets.sockets.has(socketId));
     if (liveSockets.length > 0) continue;
     delete state.players[player.id];

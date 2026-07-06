@@ -47,6 +47,7 @@ function App() {
   const [hiderStatus, setHiderStatus] = useState<HiderStatusPayload | null>(null);
   const [seekerStatus, setSeekerStatus] = useState<SeekerStatusPayload | null>(null);
   const [gameOverPayload, setGameOverPayload] = useState<GameOverPayload | null>(null);
+  const [adminReturnScreen, setAdminReturnScreen] = useState<Screen>("lobby");
 
   const identityRef = useRef({ playerId, playerSecret });
   useEffect(() => { identityRef.current = { playerId, playerSecret }; }, [playerId, playerSecret]);
@@ -168,7 +169,7 @@ function App() {
       localStorage.setItem("hs_player_secret", ack.playerSecret);
       localStorage.setItem("hs_name", payload.name || name || "Player");
       if (ack.role) localStorage.setItem("hs_role", ack.role); else localStorage.removeItem("hs_role");
-      if (ack.role === "ADMIN") { setAmAdmin(true); setScreen("admin-panel"); }
+      if (ack.role === "ADMIN") { setAmAdmin(true); setAdminReturnScreen("lobby"); setScreen("admin-panel"); }
     });
   }
 
@@ -242,6 +243,11 @@ function App() {
     });
   }
 
+  function openAdminPanel() {
+    setAdminReturnScreen(screen);
+    setScreen("admin-panel");
+  }
+
   function endGame() {
     socket.emit("admin_end_game", {}, (ack: { ok: boolean; error?: string }) => {
       if (!ack.ok) setMessage(`Could not end game: ${ack.error || "unknown"}`);
@@ -256,10 +262,10 @@ function App() {
   }
 
   if (screen === "admin-lock") return <AdminLock message={message} onSubmit={submitAdminPin} onBack={() => setScreen("lobby")} />;
-  if (screen === "admin-panel" && config) return <AdminPanel config={config} estimate={estimate} roster={roster} message={message} onUpdateConfig={updateConfig} onStartGame={startGame} onBack={() => setScreen("lobby")} onResetAll={playAgain} onRemoveInactive={removeInactive} />;
+  if (screen === "admin-panel" && config) return <AdminPanel config={config} estimate={estimate} roster={roster} message={message} onUpdateConfig={updateConfig} onStartGame={startGame} onBack={() => setScreen(adminReturnScreen)} onResetAll={playAgain} onRemoveInactive={removeInactive} />;
   if (screen === "countdown") return <Countdown secondsRemaining={countdownSeconds} />;
-  if (screen === "hider" && hiderStatus) return <HiderTerminal status={hiderStatus} message={message} isAdmin={amAdmin} onSubmitProof={submitProof} onCaught={confirmCaught} onEndGame={endGame} />;
-  if (screen === "seeker" && seekerStatus) return <SeekerTerminal status={seekerStatus} message={message} isAdmin={amAdmin} onEndGame={endGame} />;
+  if (screen === "hider" && hiderStatus) return <HiderTerminal status={hiderStatus} message={message} isAdmin={amAdmin} onSubmitProof={submitProof} onCaught={confirmCaught} onEndGame={endGame} onOpenAdmin={openAdminPanel} />;
+  if (screen === "seeker" && seekerStatus) return <SeekerTerminal status={seekerStatus} message={message} isAdmin={amAdmin} onEndGame={endGame} onOpenAdmin={openAdminPanel} />;
   if (screen === "end" && gameOverPayload) return <GameEnd endReason={gameOverPayload.endReason} stats={gameOverPayload.stats} gallery={gameOverPayload.gallery} isAdmin={amAdmin} onPlayAgain={playAgain} />;
   return <Lobby
     name={name}

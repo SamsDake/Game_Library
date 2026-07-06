@@ -95,6 +95,7 @@ button, input { font: inherit; }
 }
 .btn-primary, .btn-teal { background: var(--teal); border-color: var(--teal); color: #06251c; }
 .btn-ghost { background: transparent; }
+a.btn { display: block; text-align: center; text-decoration: none; }
 
 .ready-toggle { flex: 1; padding: 13px 18px; border-radius: 12px; font-weight: 600; cursor: pointer; background: var(--surface2); border: 1px solid var(--border); color: var(--text); }
 .ready-toggle.active { background: var(--teal-dim); border-color: var(--teal); color: var(--teal); }
@@ -188,6 +189,7 @@ button, input { font: inherit; }
 .status-pill.upcoming { background: var(--surface2); color: var(--muted); }
 .status-pill.in_progress { background: var(--orange-dim); color: var(--orange); }
 .status-pill.completed { background: var(--teal-dim); color: var(--teal); }
+.route-map-link { color: var(--muted); font-size: 12px; text-decoration: underline; white-space: nowrap; }
 
 .end-headline { font-size: 36px; font-weight: 700; }
 .end-headline.caught { color: var(--orange); }

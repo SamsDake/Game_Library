@@ -2,9 +2,9 @@ import { useState } from "react";
 import type { LngLat, SeekerStatusPayload } from "@shared/types";
 import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
-import { formatTime } from "../format";
+import { formatTime, googleMapsUrl } from "../format";
 
-export function SeekerTerminal({ status, message, isAdmin, onEndGame }: { status: SeekerStatusPayload; message: string; isAdmin: boolean; onEndGame: () => void }) {
+export function SeekerTerminal({ status, message, isAdmin, onEndGame, onOpenAdmin }: { status: SeekerStatusPayload; message: string; isAdmin: boolean; onEndGame: () => void; onOpenAdmin: () => void }) {
   const [focusOn, setFocusOn] = useState<LngLat | null>(null);
   const completedCount = status.progress.filter(p => p.status === "completed").length;
 
@@ -17,6 +17,7 @@ export function SeekerTerminal({ status, message, isAdmin, onEndGame }: { status
         <div className="role-pill seek">SEEKER</div>
         <div className="progress-pill mono">{completedCount} / {status.route.length} found</div>
         <div className="timer mono">{formatTime(status.secondsRemaining)}</div>
+        {isAdmin && <button className="btn btn-ghost" onClick={onOpenAdmin}>Admin</button>}
         {isAdmin && <button className="btn btn-ghost" onClick={onEndGame}>End Game</button>}
       </div>
       {message && <div className="notice">{message}</div>}
@@ -33,6 +34,7 @@ export function SeekerTerminal({ status, message, isAdmin, onEndGame }: { status
               </div>
               <div className="route-time mono">{progress?.completedAt != null ? formatTime(progress.completedAt) : ""}</div>
               <div className={`status-pill ${progress?.status || "upcoming"}`}>{statusLabel(progress?.status || "upcoming")}</div>
+              <a className="route-map-link" href={googleMapsUrl(o.coordinates)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>Maps</a>
             </div>;
           })}
         </div>

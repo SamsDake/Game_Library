@@ -2,15 +2,16 @@ import { useState } from "react";
 import type { HiderStatusPayload } from "@shared/types";
 import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
-import { formatTime } from "../format";
+import { formatTime, googleMapsUrl } from "../format";
 
-export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaught, onEndGame }: {
+export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaught, onEndGame, onOpenAdmin }: {
   status: HiderStatusPayload;
   message: string;
   isAdmin: boolean;
   onSubmitProof: (objectiveIndex: number, photo: File) => Promise<{ ok: boolean; error?: string }>;
   onCaught: () => void;
   onEndGame: () => void;
+  onOpenAdmin: () => void;
 }) {
   const [photo, setPhoto] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -51,12 +52,14 @@ export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaugh
         <div className="role-pill hide">HIDER</div>
         <div className="progress-pill mono">{status.objective ? `Objective ${status.objectiveIndex + 1} of ${status.totalObjectives}` : ""}</div>
         <div className="timer mono">{formatTime(status.secondsRemaining)}</div>
+        {isAdmin && <button className="btn btn-ghost" onClick={onOpenAdmin}>Admin</button>}
         {isAdmin && <button className="btn btn-ghost" onClick={onEndGame}>End Game</button>}
       </div>
       {message && <div className="notice">{message}</div>}
       {status.objective && !status.allDone && <div className="objective-card">
         <div className="objective-cat">{POI_CATEGORY_LABELS[status.objective.category]}</div>
         <div className="objective-name">{status.objective.name}</div>
+        <a className="btn btn-ghost" href={googleMapsUrl(status.objective.coordinates)} target="_blank" rel="noreferrer">Open in Google Maps</a>
         <GameMap mode="hider" objective={status.objective} />
         <div className="proof-panel">
           {previewUrl ? <>
