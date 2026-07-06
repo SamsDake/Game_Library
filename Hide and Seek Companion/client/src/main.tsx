@@ -70,6 +70,12 @@ function App() {
         setMyRole(me.role);
         setMyReady(me.ready);
       }
+      // Restores the right terminal after a page refresh mid-game — this event fires immediately
+      // on every new socket connection (including a fresh page load), before join_game even resolves.
+      if (me?.role === "HIDE" || me?.role === "SEEK") {
+        if (payload.phase === "countdown") setScreen("countdown");
+        else if (payload.phase === "active") setScreen(me.role === "HIDE" ? "hider" : "seeker");
+      }
     };
     const onCountdownTick = (payload: CountdownTickPayload) => {
       setCountdownSeconds(payload.secondsRemaining);
