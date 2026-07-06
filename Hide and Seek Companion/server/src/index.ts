@@ -45,7 +45,8 @@ const DEFAULT_CONFIG: GameConfig = {
   minDistanceM: 300,
   maxDistanceM: 900,
   totalMinutes: 30,
-  categories: [...OBJECTIVE_CATEGORIES]
+  categories: [...OBJECTIVE_CATEGORIES],
+  sameRouteForAll: true
 };
 
 const initialState = (): AppState => ({
@@ -162,7 +163,7 @@ function handleProof(req: Request, res: Response) {
   if (hider.caughtAt) return fail(409, "hider_caught");
   if (!req.file) return fail(400, "photo_required");
   if (!Number.isFinite(objectiveIndex) || objectiveIndex !== hider.objectiveIndex) return fail(409, "objective_changed");
-  const objective = game.route[objectiveIndex];
+  const objective = hider.route[objectiveIndex];
   if (!objective) return fail(409, "no_current_objective");
 
   const proofId = path.basename(req.file.filename, path.extname(req.file.filename));
@@ -181,8 +182,8 @@ function handleProof(req: Request, res: Response) {
 
   saveState();
   io.emit("proof_accepted", { proof, hiderId: playerId });
-  if (Object.values(game.hiders).every(h => h.caughtAt || h.objectiveIndex >= game.route.length)) finishGame("objectives_complete");
-  res.json({ ok: true, proof, nextObjectiveIndex: hider.objectiveIndex, allDone: hider.objectiveIndex >= game.route.length });
+  if (Object.values(game.hiders).every(h => h.caughtAt || h.objectiveIndex >= h.route.length)) finishGame("objectives_complete");
+  res.json({ ok: true, proof, nextObjectiveIndex: hider.objectiveIndex, allDone: hider.objectiveIndex >= hider.route.length });
 }
 
 io.on("connection", socket => {
@@ -292,17 +293,25 @@ io.on("connection", socket => {
     if (notReady) return ack({ ok: false, error: "not_all_ready" });
     if (!loadedRegions().length) return ack({ ok: false, error: "no_poi_data_for_region" });
 
-    const result = generateRoute(state.config);
-    if ("error" in result) return ack({ ok: false, error: result.error });
-
     const gameHiders: Record<string, HiderRunState> = {};
-    for (const player of hiders) {
-      gameHiders[player.id] = { playerId: player.id, name: player.name, objectiveIndex: 0, caughtAt: null, proofs: [] };
+    if (state.config.sameRouteForAll) {
+      const result = generateRoute(state.config);
+      if ("error" in result) return ack({ ok: false, error: result.error });
+      for (const player of hiders) {
+        gameHiders[player.id] = { playerId: player.id, name: player.name, route: result.route, objectiveIndex: 0, caughtAt: null, becameSeeker: false, proofs: [] };
+      }
+    } else {
+      const usedIds = new Set<string>();
+      for (const player of hiders) {
+        const result = generateRoute(state.config, usedIds);
+        if ("error" in result) return ack({ ok: false, error: result.error });
+        for (const objective of result.route) usedIds.add(objective.id);
+        gameHiders[player.id] = { playerId: player.id, name: player.name, route: result.route, objectiveIndex: 0, caughtAt: null, becameSeeker: false, proofs: [] };
+      }
     }
     const game: GameState = {
       id: id("game"),
       phase: "countdown",
-      route: result.route,
       config: { ...state.config },
       startedAt: null,
       countdownStartedAt: Date.now(),
@@ -329,8 +338,14 @@ io.on("connection", socket => {
     if (player.role !== "HIDE" || hider.caughtAt) return ack({ ok: false, error: "not_hider" });
 
     hider.caughtAt = Date.now();
+    const becameSeeker = hider.route.length > 1;
+    if (becameSeeker) {
+      hider.becameSeeker = true;
+      player.role = "SEEK";
+      if (!game.seekerIds.includes(playerId)) game.seekerIds.push(playerId);
+    }
     saveState();
-    io.emit("player_caught", { playerId, name: player.name });
+    io.emit("player_caught", { playerId, name: player.name, becameSeeker });
     if (Object.values(game.hiders).every(h => h.caughtAt)) finishGame("caught");
     ack({ ok: true });
   });
@@ -388,7 +403,8 @@ function applyConfig(current: GameConfig, payload: AdminConfigPayload): GameConf
   const totalMinutes = clampNumber(payload.totalMinutes, current.totalMinutes, 10, 120);
   const categories = payload.categories?.length ? payload.categories.filter(c => (OBJECTIVE_CATEGORIES as string[]).includes(c)) : current.categories;
   const objectiveCount = Math.round(clampNumber(payload.objectiveCount, current.objectiveCount, 3, 15));
-  return { centerLat, centerLng, radiusM, minDistanceM, maxDistanceM, totalMinutes, categories, objectiveCount };
+  const sameRouteForAll = typeof payload.sameRouteForAll === "boolean" ? payload.sameRouteForAll : current.sameRouteForAll;
+  return { centerLat, centerLng, radiusM, minDistanceM, maxDistanceM, totalMinutes, categories, objectiveCount, sameRouteForAll };
 }
 
 function startCountdown() {
@@ -420,7 +436,7 @@ function beginActive() {
   game.endsAt = startedAt + game.config.totalMinutes * 60 * 1000;
   state.phase = "active";
   saveState();
-  io.emit("game_started", { game: { id: game.id, route: game.route, config: game.config, startedAt, endsAt: game.endsAt } });
+  io.emit("game_started", { game: { id: game.id, config: game.config, startedAt, endsAt: game.endsAt } });
   gameTick();
 }
 
@@ -441,25 +457,31 @@ function gameTick() {
     if (player.role === "HIDE") {
       const hider = game.hiders[player.id];
       if (!hider || hider.caughtAt) continue;
-      const objective = game.route[hider.objectiveIndex] || null;
+      const objective = hider.route[hider.objectiveIndex] || null;
       const payload = {
         objectiveIndex: hider.objectiveIndex,
         objective,
-        totalObjectives: game.route.length,
+        totalObjectives: hider.route.length,
         secondsRemaining,
-        allDone: hider.objectiveIndex >= game.route.length,
+        allDone: hider.objectiveIndex >= hider.route.length,
         caughtAt: hider.caughtAt
       };
       for (const socketId of player.sockets) io.to(socketId).emit("hider_status", payload);
     }
   }
   const seekerPayload = {
-    route: game.route,
-    progress: game.route.map((_o, index) => ({
-      index,
-      status: routeStatus(game, index),
-      completedAt: completedAtFor(game, index)
-    })),
+    routes: Object.values(game.hiders)
+      .filter(hider => !hider.caughtAt)
+      .map(hider => ({
+        hiderId: hider.playerId,
+        hiderName: hider.name,
+        route: hider.route,
+        progress: hider.route.map((_o, index) => ({
+          index,
+          status: routeStatusForHider(hider, index),
+          completedAt: completedAtForHider(hider, index, game.startedAt)
+        }))
+      })),
     secondsRemaining
   };
   for (const player of Object.values(state.players)) {
@@ -469,18 +491,17 @@ function gameTick() {
   }
 }
 
-function routeStatus(game: GameState, index: number): "upcoming" | "in_progress" | "completed" {
-  const completedByAny = Object.values(game.hiders).some(h => h.objectiveIndex > index);
-  if (completedByAny) return "completed";
-  const currentForAny = Object.values(game.hiders).some(h => !h.caughtAt && h.objectiveIndex === index);
-  return currentForAny ? "in_progress" : "upcoming";
+function routeStatusForHider(hider: HiderRunState, index: number): "upcoming" | "in_progress" | "completed" {
+  if (hider.objectiveIndex > index) return "completed";
+  if (hider.objectiveIndex === index) return "in_progress";
+  return "upcoming";
 }
 
-// Seconds elapsed since game start when this objective's proof was submitted (not an epoch time).
-function completedAtFor(game: GameState, index: number): number | null {
-  const proof = game.allProofs.find(p => p.objectiveIndex === index);
-  if (!proof || !game.startedAt) return null;
-  return Math.round((proof.submittedAt - game.startedAt) / 1000);
+// Seconds elapsed since game start when this hider's proof for `index` was submitted, not an epoch time.
+function completedAtForHider(hider: HiderRunState, index: number, startedAt: number | null): number | null {
+  const proof = hider.proofs.find(p => p.objectiveIndex === index);
+  if (!proof || !startedAt) return null;
+  return Math.round((proof.submittedAt - startedAt) / 1000);
 }
 
 function finishGame(endReason: "caught" | "time_up" | "admin_ended" | "objectives_complete") {
@@ -491,8 +512,8 @@ function finishGame(endReason: "caught" | "time_up" | "admin_ended" | "objective
   game.endReason = endReason;
   state.phase = "ended";
   const stats = {
-    hiders: Object.values(game.hiders).map(h => ({ playerId: h.playerId, name: h.name, objectivesCompleted: h.objectiveIndex, caughtAt: h.caughtAt })),
-    totalObjectives: game.route.length,
+    hiders: Object.values(game.hiders).map(h => ({ playerId: h.playerId, name: h.name, objectivesCompleted: h.objectiveIndex, totalObjectives: h.route.length, caughtAt: h.caughtAt })),
+    totalObjectives: game.config.objectiveCount,
     elapsedSeconds: Math.max(0, Math.round(((game.endedAt || Date.now()) - (game.startedAt || game.endedAt || Date.now())) / 1000))
   };
   saveState();

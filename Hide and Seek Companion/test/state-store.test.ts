@@ -17,7 +17,8 @@ function appState(): AppState {
       minDistanceM: 300,
       maxDistanceM: 900,
       totalMinutes: 30,
-      categories: [...OBJECTIVE_CATEGORIES]
+      categories: [...OBJECTIVE_CATEGORIES],
+      sameRouteForAll: true
     },
     players: {},
     game: null

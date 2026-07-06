@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { LngLat, Objective, SeekerRouteProgress } from "@shared/types";
+import type { LngLat, Objective, SeekerRouteView } from "@shared/types";
+import { hiderColor } from "../format";
 
 const DARK_TILES = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
 const ATTRIB = "&copy; OpenStreetMap contributors &copy; CARTO";
@@ -15,11 +16,12 @@ type AdminProps = {
 type HiderProps = { mode: "hider"; objective: Objective | null };
 type SeekerProps = {
   mode: "seeker";
-  route: Objective[];
-  progress: SeekerRouteProgress[];
+  hidersRoutes: SeekerRouteView[];
   focusOn?: LngLat | null;
 };
 type Props = AdminProps | HiderProps | SeekerProps;
+
+const STATUS_RANK = { upcoming: 0, in_progress: 1, completed: 2 } as const;
 
 export function GameMap(props: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -87,16 +89,38 @@ export function GameMap(props: Props) {
 
     if (current.mode === "seeker") {
       const layer = L.layerGroup().addTo(map);
-      const latlngs = current.route.map(o => [o.coordinates[1], o.coordinates[0]] as [number, number]);
-      if (latlngs.length) L.polyline(latlngs, { color: "rgba(245,243,239,0.35)", weight: 2, dashArray: "4,6" }).addTo(layer);
-      current.route.forEach((o, i) => {
-        const status = current.progress[i]?.status || "upcoming";
-        const html = status === "completed" ? '<div class="pin pin-done">&#10003;</div>' : `<div class="pin pin-${status === "in_progress" ? "current" : "upcoming"}">${i + 1}</div>`;
+      // One dashed polyline per hider's own route, colored to match that hider's legend color.
+      const allLatlngs: [number, number][] = [];
+      for (const hiderRoute of current.hidersRoutes) {
+        const latlngs = hiderRoute.route.map(o => [o.coordinates[1], o.coordinates[0]] as [number, number]);
+        allLatlngs.push(...latlngs);
+        if (latlngs.length > 1) L.polyline(latlngs, { color: hiderColor(hiderRoute.hiderId), weight: 2, dashArray: "4,6", opacity: 0.6 }).addTo(layer);
+      }
+      // Markers are deduped by objective id across hiders, keeping the most-advanced status seen
+      // (relevant in "same route for all" mode, where every hider references the same objectives).
+      // Owners tracks which hiders that objective belongs to, so a marker only gets a hider-colored
+      // ring when it uniquely belongs to one hider (individual-routes mode) — in shared mode every
+      // objective belongs to everyone, so a single ring color wouldn't mean anything.
+      const merged = new Map<string, { objective: Objective; status: "upcoming" | "in_progress" | "completed"; index: number; owners: Set<string> }>();
+      for (const hiderRoute of current.hidersRoutes) {
+        hiderRoute.route.forEach((o, i) => {
+          const status = hiderRoute.progress[i]?.status || "upcoming";
+          const existing = merged.get(o.id);
+          if (!existing) merged.set(o.id, { objective: o, status, index: i, owners: new Set([hiderRoute.hiderId]) });
+          else {
+            existing.owners.add(hiderRoute.hiderId);
+            if (STATUS_RANK[status] > STATUS_RANK[existing.status]) { existing.status = status; existing.index = i; }
+          }
+        });
+      }
+      for (const { objective: o, status, index, owners } of merged.values()) {
+        const ring = owners.size === 1 ? `border: 3px solid ${hiderColor([...owners][0])};` : "";
+        const html = status === "completed" ? `<div class="pin pin-done" style="${ring}">&#10003;</div>` : `<div class="pin pin-${status === "in_progress" ? "current" : "upcoming"}" style="${ring}">${index + 1}</div>`;
         const icon = L.divIcon({ className: "", html, iconSize: [34, 34], iconAnchor: [17, 17] });
         L.marker([o.coordinates[1], o.coordinates[0]], { icon }).addTo(layer)
           .on("click", () => map.flyTo([o.coordinates[1], o.coordinates[0]], 16));
-      });
-      if (latlngs.length) map.fitBounds(latlngs, { padding: [40, 40] });
+      }
+      if (allLatlngs.length) map.fitBounds(allLatlngs, { padding: [40, 40] });
       setTimeout(() => map.invalidateSize(), 200);
       return () => layer.remove();
     }
@@ -116,5 +140,5 @@ export function GameMap(props: Props) {
 function drawSignature(props: Props): string {
   if (props.mode === "admin") return JSON.stringify(["admin", props.center, props.radiusM]);
   if (props.mode === "hider") return JSON.stringify(["hider", props.objective?.id, props.objective?.coordinates]);
-  return JSON.stringify(["seeker", props.route.map(o => o.id), props.progress.map(p => p.status)]);
+  return JSON.stringify(["seeker", props.hidersRoutes.map(hr => [hr.hiderId, hr.route.map(o => o.id), hr.progress.map(p => p.status)])]);
 }

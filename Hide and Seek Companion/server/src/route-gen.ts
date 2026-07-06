@@ -4,9 +4,11 @@ import { objectivesNear } from "./poi-index";
 
 export type RouteGenResult = { route: Objective[] } | { error: "not_enough_objectives" | "route_generation_failed" };
 
-export function generateRoute(config: GameConfig): RouteGenResult {
+export function generateRoute(config: GameConfig, excludeIds?: Set<string>): RouteGenResult {
   const center: LngLat = [config.centerLng, config.centerLat];
-  const pool = objectivesNear(center, config.radiusM, config.categories);
+  const pool = excludeIds
+    ? objectivesNear(center, config.radiusM, config.categories).filter(o => !excludeIds.has(o.id))
+    : objectivesNear(center, config.radiusM, config.categories);
   if (pool.length < config.objectiveCount) return { error: "not_enough_objectives" };
 
   const remaining = [...pool];

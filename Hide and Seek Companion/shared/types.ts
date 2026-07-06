@@ -52,6 +52,7 @@ export interface GameConfig {
   maxDistanceM: number;
   totalMinutes: number;
   categories: PoiCategory[];
+  sameRouteForAll: boolean;
 }
 
 export interface PlayerPublic {
@@ -81,8 +82,10 @@ export interface ProofRecord {
 export interface HiderRunState {
   playerId: string;
   name: string;
+  route: Objective[];
   objectiveIndex: number;
   caughtAt: number | null;
+  becameSeeker: boolean;
   proofs: ProofRecord[];
 }
 
@@ -91,7 +94,6 @@ export type EndReason = "caught" | "time_up" | "admin_ended" | "objectives_compl
 export interface GameState {
   id: string;
   phase: GamePhase;
-  route: Objective[];
   config: GameConfig;
   startedAt: number | null;
   countdownStartedAt: number | null;
@@ -142,7 +144,6 @@ export interface CountdownTickPayload {
 export interface GameStartedPayload {
   game: {
     id: string;
-    route: Objective[];
     config: GameConfig;
     startedAt: number;
     endsAt: number | null;
@@ -165,9 +166,15 @@ export interface SeekerRouteProgress {
   completedAt: number | null;
 }
 
-export interface SeekerStatusPayload {
+export interface SeekerRouteView {
+  hiderId: string;
+  hiderName: string;
   route: Objective[];
   progress: SeekerRouteProgress[];
+}
+
+export interface SeekerStatusPayload {
+  routes: SeekerRouteView[];
   secondsRemaining: number;
 }
 
@@ -179,10 +186,11 @@ export interface ProofAcceptedPayload {
 export interface PlayerCaughtPayload {
   playerId: string;
   name: string;
+  becameSeeker: boolean;
 }
 
 export interface GameOverStats {
-  hiders: Array<{ playerId: string; name: string; objectivesCompleted: number; caughtAt: number | null }>;
+  hiders: Array<{ playerId: string; name: string; objectivesCompleted: number; totalObjectives: number; caughtAt: number | null }>;
   totalObjectives: number;
   elapsedSeconds: number;
 }

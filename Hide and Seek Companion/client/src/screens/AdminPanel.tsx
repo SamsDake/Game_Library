@@ -47,6 +47,13 @@ export function AdminPanel({ config, estimate, roster, message, onUpdateConfig, 
           </div>
           <Range label="Objective Count" value={config.objectiveCount} min={3} max={Math.max(3, Math.min(15, estimate))} step={1} unit=""
             onChange={objectiveCount => onUpdateConfig({ objectiveCount })} />
+          <div className="field">
+            <div className="field-label"><span>Hider Routes</span></div>
+            <div className="chip-grid">
+              <button className={`chip${config.sameRouteForAll ? " selected" : ""}`} onClick={() => onUpdateConfig({ sameRouteForAll: true })}>Same route for all</button>
+              <button className={`chip${config.sameRouteForAll ? "" : " selected"}`} onClick={() => onUpdateConfig({ sameRouteForAll: false })}>Individual routes</button>
+            </div>
+          </div>
           <DualRange label="Objective Spacing" low={config.minDistanceM} high={config.maxDistanceM} min={100} max={3000} step={50} unit="m"
             onChange={(minDistanceM, maxDistanceM) => onUpdateConfig({ minDistanceM, maxDistanceM })} />
           <Range label="Total Game Time" value={config.totalMinutes} min={10} max={120} step={5} unit=" min"

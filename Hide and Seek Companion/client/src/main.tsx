@@ -88,12 +88,19 @@ function App() {
     };
     const onPlayerCaught = (payload: PlayerCaughtPayload) => {
       if (payload.playerId !== identityRef.current.playerId) return;
+      if (payload.becameSeeker) {
+        setMyRole("SEEK");
+        setHiderStatus(null);
+        setMessage("You were caught! You're now a Seeker.");
+        setScreen("seeker");
+        return;
+      }
       const status = hiderStatusRef.current;
       const elapsedSeconds = gameStartedAtRef.current ? Math.round((Date.now() - gameStartedAtRef.current) / 1000) : 0;
       setGameOverPayload({
         endReason: "caught",
         stats: {
-          hiders: [{ playerId: payload.playerId, name: payload.name, objectivesCompleted: status?.objectiveIndex ?? 0, caughtAt: Date.now() }],
+          hiders: [{ playerId: payload.playerId, name: payload.name, objectivesCompleted: status?.objectiveIndex ?? 0, totalObjectives: status?.totalObjectives ?? 0, caughtAt: Date.now() }],
           totalObjectives: status?.totalObjectives ?? 0,
           elapsedSeconds
         },
