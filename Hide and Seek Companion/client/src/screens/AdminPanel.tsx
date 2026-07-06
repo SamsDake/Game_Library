@@ -4,7 +4,7 @@ import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
 import { DualRange, Range } from "../components/RangeInputs";
 
-export function AdminPanel({ config, estimate, roster, message, onUpdateConfig, onStartGame, onBack }: {
+export function AdminPanel({ config, estimate, roster, message, onUpdateConfig, onStartGame, onBack, onResetAll }: {
   config: GameConfig;
   estimate: number;
   roster: PlayerPublic[];
@@ -12,6 +12,7 @@ export function AdminPanel({ config, estimate, roster, message, onUpdateConfig, 
   onUpdateConfig: (partial: Partial<GameConfig>) => void;
   onStartGame: () => void;
   onBack: () => void;
+  onResetAll: () => void;
 }) {
   const toggleCategory = (cat: PoiCategory) => {
     const has = config.categories.includes(cat);
@@ -70,7 +71,10 @@ export function AdminPanel({ config, estimate, roster, message, onUpdateConfig, 
           <div className={`ready-dot ${p.ready ? "on" : ""}`} />
         </div>)}
       </div>
-      <button className="btn btn-primary" onClick={onStartGame}>Start Game</button>
+      <div className="footer-btns">
+        <button className="btn btn-ghost" onClick={onResetAll}>Reset Everyone</button>
+        <button className="btn btn-primary" onClick={onStartGame}>Start Game</button>
+      </div>
     </div>
   </div>;
 }

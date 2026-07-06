@@ -249,7 +249,7 @@ function App() {
   }
 
   if (screen === "admin-lock") return <AdminLock message={message} onSubmit={submitAdminPin} onBack={() => setScreen("lobby")} />;
-  if (screen === "admin-panel" && config) return <AdminPanel config={config} estimate={estimate} roster={roster} message={message} onUpdateConfig={updateConfig} onStartGame={startGame} onBack={() => setScreen("lobby")} />;
+  if (screen === "admin-panel" && config) return <AdminPanel config={config} estimate={estimate} roster={roster} message={message} onUpdateConfig={updateConfig} onStartGame={startGame} onBack={() => setScreen("lobby")} onResetAll={playAgain} />;
   if (screen === "countdown") return <Countdown secondsRemaining={countdownSeconds} />;
   if (screen === "hider" && hiderStatus) return <HiderTerminal status={hiderStatus} message={message} isAdmin={amAdmin} onSubmitProof={submitProof} onCaught={confirmCaught} onEndGame={endGame} />;
   if (screen === "seeker" && seekerStatus) return <SeekerTerminal status={seekerStatus} message={message} isAdmin={amAdmin} onEndGame={endGame} />;
