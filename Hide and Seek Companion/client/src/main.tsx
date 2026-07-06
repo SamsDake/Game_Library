@@ -299,6 +299,7 @@ function startErrorText(error: string) {
 function proofErrorText(error: string) {
   const labels: Record<string, string> = {
     invalid_photo_type: "photo must be a JPG, PNG, WebP, HEIC, or HEIF image",
+    photo_too_large: "photo is too large (max 50MB)",
     objective_changed: "objective changed; reload and try again",
     hider_caught: "your run has already ended"
   };
