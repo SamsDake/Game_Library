@@ -359,6 +359,14 @@ io.on("connection", socket => {
     ack({ ok: true });
   });
 
+  socket.on("admin_remove_inactive", (_payload = {}, ack = noop) => {
+    if (!requireAdmin(socket, ack)) return;
+    const removed = removeOfflinePlayers();
+    saveState();
+    broadcastLobby();
+    ack({ ok: true, removed });
+  });
+
   socket.on("disconnect", () => {
     const player = state.players[socket.data.playerId];
     if (!player) return;
@@ -515,11 +523,15 @@ function roster(): PlayerPublic[] {
 }
 
 function removeOfflinePlayers() {
+  let removed = 0;
   for (const player of Object.values(state.players)) {
     if (player.role === "ADMIN") continue;
-    if ((player.sockets?.length || 0) > 0) continue;
+    const liveSockets = player.sockets.filter(socketId => io.sockets.sockets.has(socketId));
+    if (liveSockets.length > 0) continue;
     delete state.players[player.id];
+    removed++;
   }
+  return removed;
 }
 
 function stalePlayerTick() {

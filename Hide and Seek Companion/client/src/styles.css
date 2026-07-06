@@ -68,8 +68,11 @@ button, input { font: inherit; }
 
 .roster { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
 .roster-title { font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px; color: var(--muted); }
+.roster-header { display: flex; align-items: center; justify-content: space-between; }
+.roster-header .btn { flex: none; padding: 6px 12px; font-size: 12px; }
 .roster-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
 .roster-row:first-child { border-top: none; }
+.roster-row.offline { opacity: .5; }
 .roster-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
 .roster-avatar.teal { background: var(--teal-dim); color: var(--teal); }
 .roster-avatar.orange { background: var(--orange-dim); color: var(--orange); }
@@ -78,6 +81,7 @@ button, input { font: inherit; }
 .roster-badge { font-size: 11px; padding: 3px 8px; border-radius: 999px; font-weight: 700; }
 .roster-badge.hide { background: var(--teal-dim); color: var(--teal); }
 .roster-badge.seek { background: var(--orange-dim); color: var(--orange); }
+.roster-badge.offline { background: var(--surface2); color: var(--muted); }
 .ready-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--surface2); flex-shrink: 0; }
 .ready-dot.on { background: var(--teal); box-shadow: 0 0 6px var(--teal); }
 

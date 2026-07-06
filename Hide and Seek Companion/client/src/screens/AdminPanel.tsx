@@ -4,7 +4,7 @@ import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
 import { DualRange, Range } from "../components/RangeInputs";
 
-export function AdminPanel({ config, estimate, roster, message, onUpdateConfig, onStartGame, onBack, onResetAll }: {
+export function AdminPanel({ config, estimate, roster, message, onUpdateConfig, onStartGame, onBack, onResetAll, onRemoveInactive }: {
   config: GameConfig;
   estimate: number;
   roster: PlayerPublic[];
@@ -13,6 +13,7 @@ export function AdminPanel({ config, estimate, roster, message, onUpdateConfig, 
   onStartGame: () => void;
   onBack: () => void;
   onResetAll: () => void;
+  onRemoveInactive: () => void;
 }) {
   const toggleCategory = (cat: PoiCategory) => {
     const has = config.categories.includes(cat);
@@ -63,10 +64,14 @@ export function AdminPanel({ config, estimate, roster, message, onUpdateConfig, 
         </div>
       </div>
       <div className="roster">
-        <div className="roster-title">Lobby <span className="mono">({roster.length})</span></div>
-        {roster.map(p => <div className="roster-row" key={p.id}>
+        <div className="roster-header">
+          <div className="roster-title">Lobby <span className="mono">({roster.length})</span></div>
+          <button className="btn btn-ghost" onClick={onRemoveInactive}>Remove Inactive</button>
+        </div>
+        {roster.map(p => <div className={`roster-row${p.online ? "" : " offline"}`} key={p.id}>
           <div className={`roster-avatar ${p.role === "HIDE" ? "teal" : p.role === "SEEK" ? "orange" : "grey"}`}>{p.name[0]?.toUpperCase() || "?"}</div>
           <div className="roster-name">{p.name}</div>
+          {!p.online && <div className="roster-badge offline">OFFLINE</div>}
           {p.role && <div className={`roster-badge ${p.role === "HIDE" ? "hide" : "seek"}`}>{p.role}</div>}
           <div className={`ready-dot ${p.ready ? "on" : ""}`} />
         </div>)}

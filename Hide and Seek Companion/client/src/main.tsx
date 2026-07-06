@@ -248,8 +248,15 @@ function App() {
     });
   }
 
+  function removeInactive() {
+    socket.emit("admin_remove_inactive", {}, (ack: { ok: boolean; error?: string; removed?: number }) => {
+      if (!ack.ok) setMessage(`Could not remove inactive players: ${ack.error || "unknown"}`);
+      else setMessage(ack.removed ? `Removed ${ack.removed} inactive player${ack.removed === 1 ? "" : "s"}.` : "No inactive players to remove.");
+    });
+  }
+
   if (screen === "admin-lock") return <AdminLock message={message} onSubmit={submitAdminPin} onBack={() => setScreen("lobby")} />;
-  if (screen === "admin-panel" && config) return <AdminPanel config={config} estimate={estimate} roster={roster} message={message} onUpdateConfig={updateConfig} onStartGame={startGame} onBack={() => setScreen("lobby")} onResetAll={playAgain} />;
+  if (screen === "admin-panel" && config) return <AdminPanel config={config} estimate={estimate} roster={roster} message={message} onUpdateConfig={updateConfig} onStartGame={startGame} onBack={() => setScreen("lobby")} onResetAll={playAgain} onRemoveInactive={removeInactive} />;
   if (screen === "countdown") return <Countdown secondsRemaining={countdownSeconds} />;
   if (screen === "hider" && hiderStatus) return <HiderTerminal status={hiderStatus} message={message} isAdmin={amAdmin} onSubmitProof={submitProof} onCaught={confirmCaught} onEndGame={endGame} />;
   if (screen === "seeker" && seekerStatus) return <SeekerTerminal status={seekerStatus} message={message} isAdmin={amAdmin} onEndGame={endGame} />;
