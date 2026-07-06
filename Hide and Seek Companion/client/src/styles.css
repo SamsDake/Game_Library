@@ -104,6 +104,7 @@ button, input { font: inherit; }
 .lock-title { font-weight: 700; font-size: 18px; }
 
 .admin-header { display: flex; align-items: center; justify-content: space-between; }
+.admin-header .back-btn { flex: none; }
 .admin-grid { display: grid; grid-template-columns: 1fr; gap: 16px; width: 100%; }
 @media (min-width: 720px) { .admin-grid { grid-template-columns: 1fr 1fr; } }
 .admin-map-col, .admin-form-col { display: flex; flex-direction: column; gap: 12px; }

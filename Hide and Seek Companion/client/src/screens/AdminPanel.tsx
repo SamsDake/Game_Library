@@ -4,13 +4,14 @@ import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
 import { DualRange, Range } from "../components/RangeInputs";
 
-export function AdminPanel({ config, estimate, roster, message, onUpdateConfig, onStartGame }: {
+export function AdminPanel({ config, estimate, roster, message, onUpdateConfig, onStartGame, onBack }: {
   config: GameConfig;
   estimate: number;
   roster: PlayerPublic[];
   message: string;
   onUpdateConfig: (partial: Partial<GameConfig>) => void;
   onStartGame: () => void;
+  onBack: () => void;
 }) {
   const toggleCategory = (cat: PoiCategory) => {
     const has = config.categories.includes(cat);
@@ -24,6 +25,7 @@ export function AdminPanel({ config, estimate, roster, message, onUpdateConfig, 
     <div className="screen">
       <div className="admin-header">
         <div className="brand">ADMIN <span className="dot">&middot;</span> GAME SETUP</div>
+        <button className="btn btn-ghost back-btn" onClick={onBack}>&larr; Back</button>
       </div>
       {message && <div className="notice">{message}</div>}
       <div className="admin-grid">
