@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { HiderStatusPayload } from "@shared/types";
 import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
@@ -24,6 +24,9 @@ export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaugh
     setPhoto(file);
     setPreviewUrl(file ? URL.createObjectURL(file) : null);
   }
+
+  // Revokes the previous blob URL whenever it's replaced, and on unmount.
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
   async function submit() {
     if (!photo || submitting) return;

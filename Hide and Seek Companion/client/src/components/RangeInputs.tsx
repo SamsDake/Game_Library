@@ -1,9 +1,10 @@
 export function Range({ label, value, min, max, step, unit, onChange }: {
   label: string; value: number; min: number; max: number; step: number; unit: string; onChange: (value: number) => void;
 }) {
+  const clamped = Math.min(Math.max(value, min), max);
   return <div className="field">
-    <div className="field-label"><span>{label}</span><span className="field-value mono">{value}{unit}</span></div>
-    <input className="slider" type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))} />
+    <div className="field-label"><span>{label}</span><span className="field-value mono">{clamped}{unit}</span></div>
+    <input className="slider" type="range" min={min} max={max} step={step} value={clamped} onChange={e => onChange(Number(e.target.value))} />
   </div>;
 }
 

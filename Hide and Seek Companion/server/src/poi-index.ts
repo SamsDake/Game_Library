@@ -22,7 +22,7 @@ export function loadRegions(): void {
       if (!file.endsWith(".json")) continue;
       try {
         const objectives = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8")) as Objective[];
-        all.push(...objectives);
+        for (const objective of objectives) all.push(objective);
         regionCount += objectives.length;
       } catch (err) {
         console.warn(`[poi-index] could not read ${path.join(dir, file)}`, err instanceof Error ? err.message : err);
