@@ -4,8 +4,6 @@ import { objectivesNear } from "./poi-index";
 
 export type RouteGenResult = { route: Objective[] } | { error: "not_enough_objectives" | "route_generation_failed" };
 
-const MAX_RADIUS_FRACTION = 0.95;
-
 export function generateRoute(config: GameConfig): RouteGenResult {
   const center: LngLat = [config.centerLng, config.centerLat];
   const pool = objectivesNear(center, config.radiusM, config.categories);
@@ -14,15 +12,16 @@ export function generateRoute(config: GameConfig): RouteGenResult {
   const remaining = [...pool];
   const route: Objective[] = [];
   let angle = Math.random() * 360;
-  let cumulative = 0;
+  let anchor: LngLat = center;
   const categories = config.categories;
 
   for (let step = 0; step < config.objectiveCount; step += 1) {
     if (!remaining.length) break;
+    // Step from the last placed objective (not the game center), so the configured
+    // min/max distance actually governs the gap between consecutive objectives.
     const stepDistance = config.minDistanceM + Math.random() * (config.maxDistanceM - config.minDistanceM);
-    cumulative = Math.min(cumulative + stepDistance, config.radiusM * MAX_RADIUS_FRACTION);
     angle += (Math.random() * 120) - 60;
-    const target = destPoint(center, angle, cumulative);
+    const target = destPoint(anchor, angle, stepDistance);
 
     const preferredCategory = categories[step % categories.length];
     const pick = nearestUnused(remaining, target, preferredCategory)
@@ -31,6 +30,7 @@ export function generateRoute(config: GameConfig): RouteGenResult {
 
     route.push(pick);
     remaining.splice(remaining.indexOf(pick), 1);
+    anchor = pick.coordinates;
   }
 
   if (route.length < Math.min(3, config.objectiveCount)) return { error: "route_generation_failed" };
