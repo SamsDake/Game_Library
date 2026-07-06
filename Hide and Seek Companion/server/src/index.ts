@@ -270,9 +270,22 @@ io.on("connection", socket => {
     if (!requireAdmin(socket, ack)) return;
     if (state.phase !== "lobby") return ack({ ok: false, error: "game_already_active" });
     removeOfflinePlayers();
-    const hiders = Object.values(state.players).filter(p => p.role === "HIDE");
-    const seekers = Object.values(state.players).filter(p => p.role === "SEEK");
+    let hiders = Object.values(state.players).filter(p => p.role === "HIDE");
+    let seekers = Object.values(state.players).filter(p => p.role === "SEEK");
+    // Let the requesting admin fill whichever single role is missing and ready up,
+    // so a 2-person lobby (admin + one other player) can start a game.
+    const adminPlayer = state.players[socket.data.playerId];
+    if (adminPlayer && !hiders.length && seekers.length) {
+      adminPlayer.role = "HIDE";
+      adminPlayer.ready = true;
+      hiders = [adminPlayer];
+    } else if (adminPlayer && !seekers.length && hiders.length) {
+      adminPlayer.role = "SEEK";
+      adminPlayer.ready = true;
+      seekers = [adminPlayer];
+    }
     if (!hiders.length || !seekers.length) return ack({ ok: false, error: "need_hider_and_seeker" });
+    broadcastLobby();
     const connectedNonAdmins = Object.values(state.players).filter(p => p.role !== "ADMIN" && p.online);
     const notReady = connectedNonAdmins.some(p => !p.role || !p.ready);
     if (notReady) return ack({ ok: false, error: "not_all_ready" });
@@ -318,6 +331,15 @@ io.on("connection", socket => {
     saveState();
     io.emit("player_caught", { playerId, name: player.name });
     if (Object.values(game.hiders).every(h => h.caughtAt)) finishGame("caught");
+    ack({ ok: true });
+  });
+
+  socket.on("admin_end_game", (_payload = {}, ack = noop) => {
+    if (!requireAdmin(socket, ack)) return;
+    const game = state.game;
+    if (!game || game.phase === "ended") return ack({ ok: false, error: "no_active_game" });
+    stopCountdown();
+    finishGame("admin_ended");
     ack({ ok: true });
   });
 
@@ -451,7 +473,7 @@ function completedAtFor(game: GameState, index: number): number | null {
   return Math.round((proof.submittedAt - game.startedAt) / 1000);
 }
 
-function finishGame(endReason: "caught" | "time_up") {
+function finishGame(endReason: "caught" | "time_up" | "admin_ended") {
   const game = state.game;
   if (!game || game.phase === "ended") return;
   game.phase = "ended";

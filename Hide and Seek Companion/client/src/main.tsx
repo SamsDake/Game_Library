@@ -36,6 +36,7 @@ function App() {
   const [playerId, setPlayerId] = useState(localStorage.getItem("hs_player_id") || "");
   const [playerSecret, setPlayerSecret] = useState(localStorage.getItem("hs_player_secret") || "");
   const [myRole, setMyRole] = useState<Role | null>(null);
+  const [amAdmin, setAmAdmin] = useState(false);
   const [myReady, setMyReady] = useState(false);
   const [gameInProgress, setGameInProgress] = useState(false);
   const [roster, setRoster] = useState<PlayerPublic[]>([]);
@@ -167,7 +168,7 @@ function App() {
       localStorage.setItem("hs_player_secret", ack.playerSecret);
       localStorage.setItem("hs_name", payload.name || name || "Player");
       if (ack.role) localStorage.setItem("hs_role", ack.role); else localStorage.removeItem("hs_role");
-      if (ack.role === "ADMIN") setScreen("admin-panel");
+      if (ack.role === "ADMIN") { setAmAdmin(true); setScreen("admin-panel"); }
     });
   }
 
@@ -241,12 +242,18 @@ function App() {
     });
   }
 
+  function endGame() {
+    socket.emit("admin_end_game", {}, (ack: { ok: boolean; error?: string }) => {
+      if (!ack.ok) setMessage(`Could not end game: ${ack.error || "unknown"}`);
+    });
+  }
+
   if (screen === "admin-lock") return <AdminLock message={message} onSubmit={submitAdminPin} onBack={() => setScreen("lobby")} />;
   if (screen === "admin-panel" && config) return <AdminPanel config={config} estimate={estimate} roster={roster} message={message} onUpdateConfig={updateConfig} onStartGame={startGame} onBack={() => setScreen("lobby")} />;
   if (screen === "countdown") return <Countdown secondsRemaining={countdownSeconds} />;
-  if (screen === "hider" && hiderStatus) return <HiderTerminal status={hiderStatus} message={message} onSubmitProof={submitProof} onCaught={confirmCaught} />;
-  if (screen === "seeker" && seekerStatus) return <SeekerTerminal status={seekerStatus} message={message} />;
-  if (screen === "end" && gameOverPayload) return <GameEnd endReason={gameOverPayload.endReason} stats={gameOverPayload.stats} gallery={gameOverPayload.gallery} isAdmin={myRole === "ADMIN"} onPlayAgain={playAgain} />;
+  if (screen === "hider" && hiderStatus) return <HiderTerminal status={hiderStatus} message={message} isAdmin={amAdmin} onSubmitProof={submitProof} onCaught={confirmCaught} onEndGame={endGame} />;
+  if (screen === "seeker" && seekerStatus) return <SeekerTerminal status={seekerStatus} message={message} isAdmin={amAdmin} onEndGame={endGame} />;
+  if (screen === "end" && gameOverPayload) return <GameEnd endReason={gameOverPayload.endReason} stats={gameOverPayload.stats} gallery={gameOverPayload.gallery} isAdmin={amAdmin} onPlayAgain={playAgain} />;
   return <Lobby
     name={name}
     onNameChange={onNameChange}
@@ -254,7 +261,7 @@ function App() {
     myPlayerId={playerId}
     myRole={myRole}
     myReady={myReady}
-    isAdmin={myRole === "ADMIN"}
+    isAdmin={amAdmin}
     gameInProgress={gameInProgress}
     message={message}
     onSelectRole={selectRole}

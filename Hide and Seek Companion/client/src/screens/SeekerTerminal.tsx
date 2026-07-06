@@ -4,7 +4,7 @@ import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
 import { formatTime } from "../format";
 
-export function SeekerTerminal({ status, message }: { status: SeekerStatusPayload; message: string }) {
+export function SeekerTerminal({ status, message, isAdmin, onEndGame }: { status: SeekerStatusPayload; message: string; isAdmin: boolean; onEndGame: () => void }) {
   const [focusOn, setFocusOn] = useState<LngLat | null>(null);
   const completedCount = status.progress.filter(p => p.status === "completed").length;
 
@@ -17,6 +17,7 @@ export function SeekerTerminal({ status, message }: { status: SeekerStatusPayloa
         <div className="role-pill seek">SEEKER</div>
         <div className="progress-pill mono">{completedCount} / {status.route.length} found</div>
         <div className="timer mono">{formatTime(status.secondsRemaining)}</div>
+        {isAdmin && <button className="btn btn-ghost" onClick={onEndGame}>End Game</button>}
       </div>
       {message && <div className="notice">{message}</div>}
       <div className="seeker-grid">

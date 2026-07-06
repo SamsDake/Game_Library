@@ -4,11 +4,13 @@ import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
 import { formatTime } from "../format";
 
-export function HiderTerminal({ status, message, onSubmitProof, onCaught }: {
+export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaught, onEndGame }: {
   status: HiderStatusPayload;
   message: string;
+  isAdmin: boolean;
   onSubmitProof: (objectiveIndex: number, photo: File) => Promise<{ ok: boolean; error?: string }>;
   onCaught: () => void;
+  onEndGame: () => void;
 }) {
   const [photo, setPhoto] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -49,6 +51,7 @@ export function HiderTerminal({ status, message, onSubmitProof, onCaught }: {
         <div className="role-pill hide">HIDER</div>
         <div className="progress-pill mono">{status.objective ? `Objective ${status.objectiveIndex + 1} of ${status.totalObjectives}` : ""}</div>
         <div className="timer mono">{formatTime(status.secondsRemaining)}</div>
+        {isAdmin && <button className="btn btn-ghost" onClick={onEndGame}>End Game</button>}
       </div>
       {message && <div className="notice">{message}</div>}
       {status.objective && !status.allDone && <div className="objective-card">

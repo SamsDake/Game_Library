@@ -3,16 +3,18 @@ import { assetUrl } from "../api";
 import { formatTime } from "../format";
 
 export function GameEnd({ endReason, stats, gallery, isAdmin, onPlayAgain }: {
-  endReason: "caught" | "time_up";
+  endReason: "caught" | "time_up" | "admin_ended";
   stats: GameOverStats;
   gallery: ProofRecord[];
   isAdmin: boolean;
   onPlayAgain: () => void;
 }) {
-  const headline = endReason === "caught" ? "CAUGHT!" : "TIME'S UP";
+  const headline = endReason === "caught" ? "CAUGHT!" : endReason === "time_up" ? "TIME'S UP" : "GAME ENDED";
   const sub = endReason === "caught"
     ? "One or more hiders were caught before the clock ran out."
-    : "The hiders survived the full game without being caught.";
+    : endReason === "time_up"
+      ? "The hiders survived the full game without being caught."
+      : "The admin ended the game early.";
 
   return <div className="app">
     <div className="glow" />
