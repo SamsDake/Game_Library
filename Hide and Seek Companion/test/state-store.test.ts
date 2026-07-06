@@ -60,4 +60,22 @@ describe("StateStore file persistence", () => {
     expect(loaded.config).toEqual(initial.config);
     expect(loaded.players).toEqual({});
   });
+
+  it("ignores a pre-route-refactor state file with an active game instead of crashing on the next tick", () => {
+    const file = tmpFile("pre-refactor-state.json");
+    const { sameRouteForAll: _drop, ...legacyConfig } = appState().config;
+    fs.writeFileSync(file, JSON.stringify({
+      phase: "active",
+      config: legacyConfig,
+      players: { p1: { id: "p1", secret: "s1", role: "HIDE", ready: true, name: "Hider", online: true, joinedAt: 1, sockets: ["sock1"] } },
+      // Old GameState shape: route lived on the game, not per-hider, so this hider has no `route`.
+      game: { id: "game1", phase: "active", route: [], hiders: { p1: { playerId: "p1", name: "Hider", objectiveIndex: 0, caughtAt: null, proofs: [] } } }
+    }));
+
+    const initial = appState();
+    const store = new StateStore(initial, file);
+    const loaded = store.load();
+    expect(loaded.config).toEqual(initial.config);
+    expect(loaded.game).toBeNull();
+  });
 });

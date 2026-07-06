@@ -35,10 +35,12 @@ export class StateStore {
 function isCurrentStateShape(value: Partial<AppState>): value is AppState {
   return !!value?.config
     && Array.isArray(value.config.categories)
+    && typeof value.config.sameRouteForAll === "boolean"
     && !!value.players
     && Object.values(value.players).every(player =>
       typeof player.id === "string"
       && typeof player.secret === "string"
       && Array.isArray(player.sockets)
-    );
+    )
+    && (!value.game || Object.values(value.game.hiders || {}).every(hider => Array.isArray((hider as { route?: unknown }).route)));
 }
