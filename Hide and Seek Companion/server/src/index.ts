@@ -303,7 +303,9 @@ io.on("connection", socket => {
   socket.on("admin_start_game", (_payload = {}, ack = noop) => {
     if (!requireAdmin(socket, ack)) return;
     if (state.phase !== "lobby") return ack({ ok: false, error: "game_already_active" });
-    removeOfflinePlayers();
+    // Deliberately not calling removeOfflinePlayers() here: a player who already picked a role
+    // and readied up but is momentarily disconnected (dead phone, dropped signal) should still be
+    // included in the game so their terminal can be claimed/resumed later — not silently dropped.
     let hiders = Object.values(state.players).filter(p => p.role === "HIDE");
     let seekers = Object.values(state.players).filter(p => p.role === "SEEK");
     // Let the requesting admin fill whichever single role is missing and ready up,
