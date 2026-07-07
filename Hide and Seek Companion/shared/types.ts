@@ -128,6 +128,10 @@ export interface SetReadyPayload {
   ready: boolean;
 }
 
+export interface ClaimPlayerPayload {
+  playerId: string;
+}
+
 export type AdminConfigPayload = Partial<GameConfig>;
 
 export interface LobbyUpdatePayload {

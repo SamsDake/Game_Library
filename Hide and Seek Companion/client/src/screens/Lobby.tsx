@@ -1,6 +1,6 @@
 import type { PlayerPublic, Role } from "@shared/types";
 
-export function Lobby({ name, onNameChange, roster, myPlayerId, myRole, myReady, isAdmin, gameInProgress, canResume, message, onSelectRole, onToggleReady, onStartGame, onOpenAdmin, onResumeGame }: {
+export function Lobby({ name, onNameChange, roster, myPlayerId, myRole, myReady, isAdmin, gameInProgress, canResume, message, onSelectRole, onToggleReady, onStartGame, onOpenAdmin, onResumeGame, onClaimPlayer }: {
   name: string;
   onNameChange: (name: string) => void;
   roster: PlayerPublic[];
@@ -16,6 +16,7 @@ export function Lobby({ name, onNameChange, roster, myPlayerId, myRole, myReady,
   onStartGame: () => void;
   onOpenAdmin: () => void;
   onResumeGame: () => void;
+  onClaimPlayer: (playerId: string) => void;
 }) {
   const hiderCount = roster.filter(p => p.role === "HIDE").length;
   const seekerCount = roster.filter(p => p.role === "SEEK").length;
@@ -28,7 +29,7 @@ export function Lobby({ name, onNameChange, roster, myPlayerId, myRole, myReady,
         <p className="lobby-sub">Choose your role, ready up, and wait for the countdown.</p>
       </div>
       {message && <div className="notice">{message}</div>}
-      {gameInProgress && <div className="notice">{canResume ? "A game is in progress. Tap your name below to rejoin." : "A game is already in progress. Wait for it to finish."}</div>}
+      {gameInProgress && <div className="notice">A game is in progress. Tap a player's name below to open their terminal.</div>}
       <input className="name-input" type="text" placeholder="Your name" maxLength={18} value={name}
         onChange={e => onNameChange(e.target.value)} />
       {!gameInProgress && <div className="role-picker">
@@ -46,13 +47,17 @@ export function Lobby({ name, onNameChange, roster, myPlayerId, myRole, myReady,
       <div className="roster">
         <div className="roster-title">Lobby <span className="mono">({roster.length})</span></div>
         {roster.map(p => {
-          const resumable = p.id === myPlayerId && canResume;
-          return <div className={`roster-row${p.online ? "" : " offline"}${resumable ? " clickable" : ""}`} key={p.id} onClick={resumable ? onResumeGame : undefined}>
+          const isMe = p.id === myPlayerId;
+          const hasTerminal = p.role === "HIDE" || p.role === "SEEK";
+          const resumable = isMe && canResume;
+          const claimable = !isMe && gameInProgress && hasTerminal;
+          return <div className={`roster-row${p.online ? "" : " offline"}${resumable || claimable ? " clickable" : ""}`} key={p.id} onClick={resumable ? onResumeGame : claimable ? () => onClaimPlayer(p.id) : undefined}>
             <div className={`roster-avatar ${p.role === "HIDE" ? "teal" : p.role === "SEEK" ? "orange" : "grey"}`}>{p.name[0]?.toUpperCase() || "?"}</div>
-            <div className="roster-name">{p.name}{p.id === myPlayerId ? " (you)" : ""}</div>
+            <div className="roster-name">{p.name}{isMe ? " (you)" : ""}</div>
             {!p.online && <div className="roster-badge offline">OFFLINE</div>}
             {p.role && <div className={`roster-badge ${p.role === "HIDE" ? "hide" : "seek"}`}>{p.role === "HIDE" ? "HIDE" : "SEEK"}</div>}
             {resumable && <div className="roster-badge resume">RESUME</div>}
+            {claimable && <div className="roster-badge resume">OPEN</div>}
             <div className={`ready-dot ${p.ready ? "on" : ""}`} />
           </div>;
         })}

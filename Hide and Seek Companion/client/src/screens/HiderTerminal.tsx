@@ -4,7 +4,7 @@ import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
 import { formatTime, googleMapsUrl } from "../format";
 
-export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaught, onEndGame, onOpenAdmin }: {
+export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaught, onEndGame, onOpenAdmin, onBackToLobby }: {
   status: HiderStatusPayload;
   message: string;
   isAdmin: boolean;
@@ -12,6 +12,7 @@ export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaugh
   onCaught: () => void;
   onEndGame: () => void;
   onOpenAdmin: () => void;
+  onBackToLobby: () => void;
 }) {
   const [photo, setPhoto] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -52,6 +53,7 @@ export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaugh
   return <div className="app">
     <div className="screen">
       <div className="terminal-header">
+        <button className="btn btn-ghost" onClick={onBackToLobby}>Lobby</button>
         <div className="role-pill hide">HIDER</div>
         <div className="progress-pill mono">{status.objective ? `Objective ${status.objectiveIndex + 1} of ${status.totalObjectives}` : ""}</div>
         <div className="timer mono">{formatTime(status.secondsRemaining)}</div>

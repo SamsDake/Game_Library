@@ -59,6 +59,10 @@ function App() {
   const gameStartedAtRef = useRef<number | null>(null);
   const myProofsRef = useRef<ProofRecord[]>([]);
   const connectedOnceRef = useRef(false);
+  // lobby_update now also broadcasts mid-game (so the roster stays live for anyone browsing the
+  // Lobby), which would otherwise re-trigger the auto-restore below on every unrelated roster
+  // change and yank the player back into their terminal. Only run it once per connection.
+  const autoRestorePendingRef = useRef(true);
 
   useEffect(() => {
     const onLobbyUpdate = (payload: LobbyUpdatePayload) => {
@@ -73,9 +77,12 @@ function App() {
       }
       // Restores the right terminal after a page refresh mid-game — this event fires immediately
       // on every new socket connection (including a fresh page load), before join_game even resolves.
-      if (me?.role === "HIDE" || me?.role === "SEEK") {
-        if (payload.phase === "countdown") setScreen("countdown");
-        else if (payload.phase === "active") setScreen(me.role === "HIDE" ? "hider" : "seeker");
+      if (autoRestorePendingRef.current) {
+        autoRestorePendingRef.current = false;
+        if (me?.role === "HIDE" || me?.role === "SEEK") {
+          if (payload.phase === "countdown") setScreen("countdown");
+          else if (payload.phase === "active") setScreen(me.role === "HIDE" ? "hider" : "seeker");
+        }
       }
     };
     const onCountdownTick = (payload: CountdownTickPayload) => {
@@ -127,6 +134,7 @@ function App() {
       setScreen(roleRef.current === "ADMIN" ? "admin-panel" : "lobby");
     };
     const onConnect = () => {
+      autoRestorePendingRef.current = true;
       const { playerId: pid, playerSecret: secret } = identityRef.current;
       if (connectedOnceRef.current && pid && secret && roleRef.current !== "ADMIN") {
         socket.emit("join_game", { name: localStorage.getItem("hs_name") || "Player", role: roleRef.current, playerId: pid, playerSecret: secret });
@@ -211,6 +219,28 @@ function App() {
     setScreen(myRole === "HIDE" ? "hider" : "seeker");
   }
 
+  function claimPlayer(targetPlayerId: string) {
+    socket.emit("claim_player", { playerId: targetPlayerId }, (ack: { ok: boolean; error?: string; playerId?: string; playerSecret?: string; role?: Role | null; name?: string }) => {
+      if (!ack.ok || !ack.playerId || !ack.playerSecret) {
+        setMessage(`Could not open that player's terminal: ${ack.error || "unknown"}`);
+        return;
+      }
+      setPlayerId(ack.playerId);
+      setPlayerSecret(ack.playerSecret);
+      setMyRole(ack.role ?? null);
+      localStorage.setItem("hs_player_id", ack.playerId);
+      localStorage.setItem("hs_player_secret", ack.playerSecret);
+      if (ack.name) { setName(ack.name); localStorage.setItem("hs_name", ack.name); }
+      if (ack.role) localStorage.setItem("hs_role", ack.role); else localStorage.removeItem("hs_role");
+      if (ack.role === "HIDE") setSeekerStatus(null); else if (ack.role === "SEEK") setHiderStatus(null);
+      setScreen(ack.role === "HIDE" ? "hider" : "seeker");
+    });
+  }
+
+  function backToLobby() {
+    setScreen("lobby");
+  }
+
   function updateConfig(partial: Partial<GameConfig>) {
     socket.emit("admin_update_config", partial, (ack: { ok: boolean; error?: string; config?: GameConfig; estimate?: number }) => {
       if (!ack.ok) { setMessage(`Config update failed: ${ack.error || "unknown"}`); return; }
@@ -282,8 +312,8 @@ function App() {
   if (screen === "admin-lock") return <AdminLock message={message} onSubmit={submitAdminPin} onBack={() => setScreen("lobby")} />;
   if (screen === "admin-panel" && config) return <AdminPanel config={config} estimate={estimate} roster={roster} message={message} onUpdateConfig={updateConfig} onStartGame={startGame} onBack={() => setScreen(adminReturnScreen)} onResetAll={playAgain} onRemoveInactive={removeInactive} />;
   if (screen === "countdown") return <Countdown secondsRemaining={countdownSeconds} />;
-  if (screen === "hider" && hiderStatus) return <HiderTerminal status={hiderStatus} message={message} isAdmin={amAdmin} onSubmitProof={submitProof} onCaught={confirmCaught} onEndGame={endGame} onOpenAdmin={openAdminPanel} />;
-  if (screen === "seeker" && seekerStatus) return <SeekerTerminal status={seekerStatus} message={message} isAdmin={amAdmin} onEndGame={endGame} onOpenAdmin={openAdminPanel} />;
+  if (screen === "hider" && hiderStatus) return <HiderTerminal status={hiderStatus} message={message} isAdmin={amAdmin} onSubmitProof={submitProof} onCaught={confirmCaught} onEndGame={endGame} onOpenAdmin={openAdminPanel} onBackToLobby={backToLobby} />;
+  if (screen === "seeker" && seekerStatus) return <SeekerTerminal status={seekerStatus} message={message} isAdmin={amAdmin} onEndGame={endGame} onOpenAdmin={openAdminPanel} onBackToLobby={backToLobby} />;
   if (screen === "end" && gameOverPayload) return <GameEnd endReason={gameOverPayload.endReason} stats={gameOverPayload.stats} gallery={gameOverPayload.gallery} isAdmin={amAdmin} onPlayAgain={playAgain} />;
   return <Lobby
     name={name}
@@ -301,6 +331,7 @@ function App() {
     onStartGame={startGame}
     onOpenAdmin={() => setScreen("admin-lock")}
     onResumeGame={resumeGame}
+    onClaimPlayer={claimPlayer}
   />;
 }
 

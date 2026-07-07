@@ -4,7 +4,7 @@ import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
 import { formatTime, googleMapsUrl, hiderColor } from "../format";
 
-export function SeekerTerminal({ status, message, isAdmin, onEndGame, onOpenAdmin }: { status: SeekerStatusPayload; message: string; isAdmin: boolean; onEndGame: () => void; onOpenAdmin: () => void }) {
+export function SeekerTerminal({ status, message, isAdmin, onEndGame, onOpenAdmin, onBackToLobby }: { status: SeekerStatusPayload; message: string; isAdmin: boolean; onEndGame: () => void; onOpenAdmin: () => void; onBackToLobby: () => void }) {
   const [focusOn, setFocusOn] = useState<LngLat | null>(null);
 
   const statusLabel = (s: "upcoming" | "in_progress" | "completed") =>
@@ -13,6 +13,7 @@ export function SeekerTerminal({ status, message, isAdmin, onEndGame, onOpenAdmi
   return <div className="app">
     <div className="screen">
       <div className="terminal-header">
+        <button className="btn btn-ghost" onClick={onBackToLobby}>Lobby</button>
         <div className="role-pill seek">SEEKER</div>
         <div className="progress-pill mono">{status.routes.length} hider{status.routes.length === 1 ? "" : "s"} in play</div>
         <div className="timer mono">{formatTime(status.secondsRemaining)}</div>

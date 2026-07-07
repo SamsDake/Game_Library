@@ -9,6 +9,7 @@ import { Server } from "socket.io";
 import type {
   AdminConfigPayload,
   AppState,
+  ClaimPlayerPayload,
   GameConfig,
   GameState,
   HiderRunState,
@@ -257,6 +258,34 @@ io.on("connection", socket => {
     saveState();
     broadcastLobby();
     ack({ ok: true });
+  });
+
+  socket.on("claim_player", (payload: ClaimPlayerPayload, ack = noop) => {
+    if (state.phase === "lobby") return ack({ ok: false, error: "no_active_game" });
+    const target = state.players[payload.playerId];
+    if (!target) return ack({ ok: false, error: "player_not_found" });
+    if (target.role !== "HIDE" && target.role !== "SEEK") return ack({ ok: false, error: "no_terminal" });
+
+    // Unlike join_game's identity switch, don't delete the vacated identity here — it's very
+    // likely a live player mid-run, and its game.hiders/seekerIds linkage must survive so they
+    // can be reclaimed later. Just detach this socket, mirroring the plain "disconnect" cleanup.
+    const previousPlayerId = socket.data.playerId;
+    if (previousPlayerId && previousPlayerId !== target.id) {
+      const previous = state.players[previousPlayerId];
+      if (previous) {
+        previous.sockets = previous.sockets.filter(socketId => socketId !== socket.id);
+        previous.online = previous.sockets.length > 0;
+      }
+    }
+
+    target.online = true;
+    target.sockets = Array.from(new Set([...(target.sockets || []), socket.id]));
+    socket.data.playerId = target.id;
+    socket.data.isAdmin = false;
+
+    saveState();
+    broadcastLobby();
+    ack({ ok: true, playerId: target.id, playerSecret: target.secret, role: target.role, name: target.name });
   });
 
   socket.on("admin_update_config", (payload: AdminConfigPayload, ack = noop) => {
@@ -530,7 +559,6 @@ function lobbyPayload() {
 }
 
 function broadcastLobby() {
-  if (state.phase !== "lobby") return;
   io.emit("lobby_update", lobbyPayload());
 }
 
