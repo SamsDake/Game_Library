@@ -229,7 +229,13 @@ function App() {
   }
 
   function claimPlayer(targetPlayerId: string) {
-    socket.emit("claim_player", { playerId: targetPlayerId }, (ack: { ok: boolean; error?: string; playerId?: string; playerSecret?: string; role?: Role | null; name?: string; hiderStatus?: HiderStatusPayload; seekerStatus?: SeekerStatusPayload }) => {
+    // timeout() makes the callback fire with err if the server never acks (e.g. an outdated
+    // server without this handler) — otherwise the tap fails silently and looks like a dead click.
+    socket.timeout(8000).emit("claim_player", { playerId: targetPlayerId }, (err: Error | null, ack: { ok: boolean; error?: string; playerId?: string; playerSecret?: string; role?: Role | null; name?: string; hiderStatus?: HiderStatusPayload; seekerStatus?: SeekerStatusPayload }) => {
+      if (err) {
+        setMessage("Could not open that player's terminal: the server did not respond.");
+        return;
+      }
       if (!ack.ok || !ack.playerId || !ack.playerSecret) {
         setMessage(`Could not open that player's terminal: ${claimErrorText(ack.error || "unknown")}`);
         return;
