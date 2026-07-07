@@ -1,6 +1,6 @@
 import type { PlayerPublic, Role } from "@shared/types";
 
-export function Lobby({ name, onNameChange, roster, myPlayerId, myRole, myReady, isAdmin, gameInProgress, canResume, message, onSelectRole, onToggleReady, onStartGame, onOpenAdmin, onResumeGame, onClaimPlayer }: {
+export function Lobby({ name, onNameChange, roster, myPlayerId, myRole, myReady, isAdmin, gameInProgress, gameActive, canResume, message, onSelectRole, onToggleReady, onStartGame, onOpenAdmin, onResumeGame, onClaimPlayer }: {
   name: string;
   onNameChange: (name: string) => void;
   roster: PlayerPublic[];
@@ -9,6 +9,7 @@ export function Lobby({ name, onNameChange, roster, myPlayerId, myRole, myReady,
   myReady: boolean;
   isAdmin: boolean;
   gameInProgress: boolean;
+  gameActive: boolean;
   canResume: boolean;
   message: string;
   onSelectRole: (role: "HIDE" | "SEEK") => void;
@@ -29,7 +30,7 @@ export function Lobby({ name, onNameChange, roster, myPlayerId, myRole, myReady,
         <p className="lobby-sub">Choose your role, ready up, and wait for the countdown.</p>
       </div>
       {message && <div className="notice">{message}</div>}
-      {gameInProgress && <div className="notice">A game is in progress. Tap a player's name below to open their terminal.</div>}
+      {gameInProgress && <div className="notice">{gameActive ? "A game is in progress. Tap a player's name below to open their terminal." : "A game is already in progress. Wait for it to finish."}</div>}
       <input className="name-input" type="text" placeholder="Your name" maxLength={18} value={name}
         onChange={e => onNameChange(e.target.value)} />
       {!gameInProgress && <div className="role-picker">
@@ -50,7 +51,7 @@ export function Lobby({ name, onNameChange, roster, myPlayerId, myRole, myReady,
           const isMe = p.id === myPlayerId;
           const hasTerminal = p.role === "HIDE" || p.role === "SEEK";
           const resumable = isMe && canResume;
-          const claimable = !isMe && gameInProgress && hasTerminal;
+          const claimable = !isMe && gameActive && hasTerminal;
           return <div className={`roster-row${p.online ? "" : " offline"}${resumable || claimable ? " clickable" : ""}`} key={p.id} onClick={resumable ? onResumeGame : claimable ? () => onClaimPlayer(p.id) : undefined}>
             <div className={`roster-avatar ${p.role === "HIDE" ? "teal" : p.role === "SEEK" ? "orange" : "grey"}`}>{p.name[0]?.toUpperCase() || "?"}</div>
             <div className="roster-name">{p.name}{isMe ? " (you)" : ""}</div>

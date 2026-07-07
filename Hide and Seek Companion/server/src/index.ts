@@ -261,7 +261,10 @@ io.on("connection", socket => {
   });
 
   socket.on("claim_player", (payload: ClaimPlayerPayload, ack = noop) => {
-    if (state.phase === "lobby") return ack({ ok: false, error: "no_active_game" });
+    // Gated on "active" specifically, matching gameTick — that's the only phase which actually
+    // delivers hider_status/seeker_status, so claiming during "countdown"/"ended" would otherwise
+    // hand back a valid identity whose terminal can never render.
+    if (state.phase !== "active") return ack({ ok: false, error: "game_not_active" });
     const target = state.players[payload.playerId];
     if (!target) return ack({ ok: false, error: "player_not_found" });
     if (target.role !== "HIDE" && target.role !== "SEEK") return ack({ ok: false, error: "no_terminal" });
@@ -354,6 +357,7 @@ io.on("connection", socket => {
     state.phase = "countdown";
     state.game = game;
     saveState();
+    broadcastLobby();
     startCountdown();
     ack({ ok: true });
   });
@@ -465,6 +469,7 @@ function beginActive() {
   game.endsAt = startedAt + game.config.totalMinutes * 60 * 1000;
   state.phase = "active";
   saveState();
+  broadcastLobby();
   io.emit("game_started", { game: { id: game.id, config: game.config, startedAt, endsAt: game.endsAt } });
   gameTick();
 }
@@ -546,6 +551,7 @@ function finishGame(endReason: "caught" | "time_up" | "admin_ended" | "objective
     elapsedSeconds: Math.max(0, Math.round(((game.endedAt || Date.now()) - (game.startedAt || game.endedAt || Date.now())) / 1000))
   };
   saveState();
+  broadcastLobby();
   io.emit("game_over", { endReason, stats, gallery: game.allProofs });
 }
 

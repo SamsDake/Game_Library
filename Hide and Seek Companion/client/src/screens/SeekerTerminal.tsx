@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { LngLat, SeekerStatusPayload } from "@shared/types";
 import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
+import { LocationPanel } from "../components/LocationPanel";
 import { formatTime, googleMapsUrl, hiderColor } from "../format";
 
 export function SeekerTerminal({ status, message, isAdmin, onEndGame, onOpenAdmin, onBackToLobby }: { status: SeekerStatusPayload; message: string; isAdmin: boolean; onEndGame: () => void; onOpenAdmin: () => void; onBackToLobby: () => void }) {
@@ -21,6 +22,7 @@ export function SeekerTerminal({ status, message, isAdmin, onEndGame, onOpenAdmi
         {isAdmin && <button className="btn btn-ghost" onClick={onEndGame}>End Game</button>}
       </div>
       {message && <div className="notice">{message}</div>}
+      <LocationPanel />
       <div className="seeker-grid">
         <GameMap mode="seeker" hidersRoutes={status.routes} focusOn={focusOn} />
         <div className="route-list">

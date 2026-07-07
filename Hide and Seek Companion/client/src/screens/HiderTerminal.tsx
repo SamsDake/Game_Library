@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { HiderStatusPayload } from "@shared/types";
 import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
+import { LocationPanel } from "../components/LocationPanel";
 import { formatTime, googleMapsUrl } from "../format";
 
 export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaught, onEndGame, onOpenAdmin, onBackToLobby }: {
@@ -61,6 +62,7 @@ export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaugh
         {isAdmin && <button className="btn btn-ghost" onClick={onEndGame}>End Game</button>}
       </div>
       {message && <div className="notice">{message}</div>}
+      <LocationPanel />
       {status.objective && !status.allDone && <div className="objective-card">
         <div className="objective-cat">{POI_CATEGORY_LABELS[status.objective.category]}</div>
         <div className="objective-name">{status.objective.name}</div>

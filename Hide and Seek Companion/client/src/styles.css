@@ -150,6 +150,11 @@ a.btn { display: block; text-align: center; text-decoration: none; }
 .progress-pill { color: var(--muted); font-size: 13px; }
 .timer { font-size: 18px; font-weight: 700; }
 
+.location-panel { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.location-panel .btn { flex: none; }
+.location-readout { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
+.location-readout a { color: var(--muted); text-decoration: underline; }
+
 .objective-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
 .objective-cat { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
 .objective-name { font-size: 20px; font-weight: 700; }

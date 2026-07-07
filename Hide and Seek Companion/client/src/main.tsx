@@ -7,6 +7,7 @@ import type {
   CountdownTickPayload,
   GameConfig,
   GameOverPayload,
+  GamePhase,
   GameStartedPayload,
   HiderStatusPayload,
   JoinGamePayload,
@@ -39,6 +40,7 @@ function App() {
   const [amAdmin, setAmAdmin] = useState(false);
   const [myReady, setMyReady] = useState(false);
   const [gameInProgress, setGameInProgress] = useState(false);
+  const [phase, setPhase] = useState<GamePhase>("lobby");
   const [roster, setRoster] = useState<PlayerPublic[]>([]);
   const [config, setConfig] = useState<GameConfig | null>(null);
   const [estimate, setEstimate] = useState(0);
@@ -48,7 +50,11 @@ function App() {
   const [seekerStatus, setSeekerStatus] = useState<SeekerStatusPayload | null>(null);
   const [gameOverPayload, setGameOverPayload] = useState<GameOverPayload | null>(null);
   const [adminReturnScreen, setAdminReturnScreen] = useState<Screen>("lobby");
-  const canResume = gameInProgress && ((myRole === "HIDE" && !!hiderStatus) || (myRole === "SEEK" && !!seekerStatus));
+  // Gated on "active" specifically (not just gameInProgress, which also covers "countdown"/"ended")
+  // because that's the only phase gameTick actually delivers hider_status/seeker_status in — opening
+  // a terminal during any other phase would be a dead click that never renders.
+  const gameActive = phase === "active";
+  const canResume = gameActive && ((myRole === "HIDE" && !!hiderStatus) || (myRole === "SEEK" && !!seekerStatus));
 
   const identityRef = useRef({ playerId, playerSecret });
   useEffect(() => { identityRef.current = { playerId, playerSecret }; }, [playerId, playerSecret]);
@@ -70,6 +76,7 @@ function App() {
       setConfig(payload.config);
       setEstimate(payload.estimate);
       setGameInProgress(payload.phase !== "lobby");
+      setPhase(payload.phase);
       const me = payload.roster.find(p => p.id === identityRef.current.playerId);
       if (me) {
         setMyRole(me.role);
@@ -324,6 +331,7 @@ function App() {
     myReady={myReady}
     isAdmin={amAdmin}
     gameInProgress={gameInProgress}
+    gameActive={gameActive}
     canResume={canResume}
     message={message}
     onSelectRole={selectRole}
