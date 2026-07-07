@@ -229,9 +229,9 @@ function App() {
   }
 
   function claimPlayer(targetPlayerId: string) {
-    socket.emit("claim_player", { playerId: targetPlayerId }, (ack: { ok: boolean; error?: string; playerId?: string; playerSecret?: string; role?: Role | null; name?: string }) => {
+    socket.emit("claim_player", { playerId: targetPlayerId }, (ack: { ok: boolean; error?: string; playerId?: string; playerSecret?: string; role?: Role | null; name?: string; hiderStatus?: HiderStatusPayload; seekerStatus?: SeekerStatusPayload }) => {
       if (!ack.ok || !ack.playerId || !ack.playerSecret) {
-        setMessage(`Could not open that player's terminal: ${ack.error || "unknown"}`);
+        setMessage(`Could not open that player's terminal: ${claimErrorText(ack.error || "unknown")}`);
         return;
       }
       setPlayerId(ack.playerId);
@@ -241,8 +241,17 @@ function App() {
       localStorage.setItem("hs_player_secret", ack.playerSecret);
       if (ack.name) { setName(ack.name); localStorage.setItem("hs_name", ack.name); }
       if (ack.role) localStorage.setItem("hs_role", ack.role); else localStorage.removeItem("hs_role");
-      if (ack.role === "HIDE") setSeekerStatus(null); else if (ack.role === "SEEK") setHiderStatus(null);
-      setScreen(ack.role === "HIDE" ? "hider" : "seeker");
+      // The ack carries the terminal's current state, so the switch renders immediately — without
+      // this, the terminal's render guard fails until the next server tick and the click looks dead.
+      if (ack.role === "HIDE" && ack.hiderStatus) {
+        setHiderStatus(ack.hiderStatus);
+        setSeekerStatus(null);
+        setScreen("hider");
+      } else if (ack.role === "SEEK" && ack.seekerStatus) {
+        setSeekerStatus(ack.seekerStatus);
+        setHiderStatus(null);
+        setScreen("seeker");
+      }
     });
   }
 
@@ -353,6 +362,15 @@ function startErrorText(error: string) {
     not_enough_objectives: "not enough real places nearby for the requested objective count",
     route_generation_failed: "could not build a route from the available places",
     admin_required: "admin access required"
+  };
+  return labels[error] || error;
+}
+
+function claimErrorText(error: string) {
+  const labels: Record<string, string> = {
+    game_not_active: "no game is currently running",
+    player_not_found: "that player no longer exists",
+    no_terminal: "their run has already ended"
   };
   return labels[error] || error;
 }

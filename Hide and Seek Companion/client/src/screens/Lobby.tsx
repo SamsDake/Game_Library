@@ -49,9 +49,8 @@ export function Lobby({ name, onNameChange, roster, myPlayerId, myRole, myReady,
         <div className="roster-title">Lobby <span className="mono">({roster.length})</span></div>
         {roster.map(p => {
           const isMe = p.id === myPlayerId;
-          const hasTerminal = p.role === "HIDE" || p.role === "SEEK";
           const resumable = isMe && canResume;
-          const claimable = !isMe && gameActive && hasTerminal;
+          const claimable = !isMe && gameActive && p.inGame;
           return <div className={`roster-row${p.online ? "" : " offline"}${resumable || claimable ? " clickable" : ""}`} key={p.id} onClick={resumable ? onResumeGame : claimable ? () => onClaimPlayer(p.id) : undefined}>
             <div className={`roster-avatar ${p.role === "HIDE" ? "teal" : p.role === "SEEK" ? "orange" : "grey"}`}>{p.name[0]?.toUpperCase() || "?"}</div>
             <div className="roster-name">{p.name}{isMe ? " (you)" : ""}</div>

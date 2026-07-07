@@ -225,7 +225,12 @@ io.on("connection", socket => {
       name: "Player"
     };
     player.name = cleanName(payload.name || player.name);
-    if (role) player.role = role;
+    // A brand-new player can't take a HIDE/SEEK role mid-game: they aren't part of the running
+    // game, so the role would only produce a ghost roster entry that looks claimable but has no
+    // terminal behind it. This happens in practice when a device with a stale stored role from a
+    // previous session opens the page mid-game. Existing players re-asserting their role (e.g.
+    // reconnects) and admin logins are unaffected.
+    if (role && (role === "ADMIN" || existing || state.phase === "lobby")) player.role = role;
     player.online = true;
     player.sockets = Array.from(new Set([...(player.sockets || []), socket.id]));
     state.players[player.id] = player;
@@ -264,20 +269,23 @@ io.on("connection", socket => {
     // Gated on "active" specifically, matching gameTick — that's the only phase which actually
     // delivers hider_status/seeker_status, so claiming during "countdown"/"ended" would otherwise
     // hand back a valid identity whose terminal can never render.
-    if (state.phase !== "active") return ack({ ok: false, error: "game_not_active" });
+    const game = state.game;
+    if (state.phase !== "active" || !game) return ack({ ok: false, error: "game_not_active" });
     const target = state.players[payload.playerId];
     if (!target) return ack({ ok: false, error: "player_not_found" });
-    if (target.role !== "HIDE" && target.role !== "SEEK") return ack({ ok: false, error: "no_terminal" });
+    if (!playerHasLiveTerminal(target)) return ack({ ok: false, error: "no_terminal" });
 
-    // Unlike join_game's identity switch, don't delete the vacated identity here — it's very
-    // likely a live player mid-run, and its game.hiders/seekerIds linkage must survive so they
-    // can be reclaimed later. Just detach this socket, mirroring the plain "disconnect" cleanup.
+    // Detach this socket from its previous identity. A roleless previous identity (e.g. the
+    // placeholder a fresh page's auto-join creates) is deleted once socketless so repeated claims
+    // don't litter the roster; identities with a role are kept — likely a live player mid-run
+    // whose game.hiders/seekerIds linkage must survive so they can be reclaimed later.
     const previousPlayerId = socket.data.playerId;
     if (previousPlayerId && previousPlayerId !== target.id) {
       const previous = state.players[previousPlayerId];
       if (previous) {
         previous.sockets = previous.sockets.filter(socketId => socketId !== socket.id);
-        previous.online = previous.sockets.length > 0;
+        if (!previous.sockets.length && !previous.role) delete state.players[previousPlayerId];
+        else previous.online = previous.sockets.length > 0;
       }
     }
 
@@ -286,9 +294,16 @@ io.on("connection", socket => {
     socket.data.playerId = target.id;
     socket.data.isAdmin = false;
 
+    // Ship the current terminal state in the ack so the claiming client can render immediately,
+    // instead of sitting on the Lobby until the next gameTick happens to deliver a status event.
+    const secondsRemaining = secondsRemainingFor(game);
+    const status = target.role === "HIDE"
+      ? { hiderStatus: hiderStatusPayload(game.hiders[target.id], secondsRemaining) }
+      : { seekerStatus: seekerStatusPayload(game, secondsRemaining) };
+
     saveState();
     broadcastLobby();
-    ack({ ok: true, playerId: target.id, playerSecret: target.secret, role: target.role, name: target.name });
+    ack({ ok: true, playerId: target.id, playerSecret: target.secret, role: target.role, name: target.name, ...status });
   });
 
   socket.on("admin_update_config", (payload: AdminConfigPayload, ack = noop) => {
@@ -481,31 +496,19 @@ function secondsRemainingFor(game: GameState): number {
   return Math.max(0, Math.round((game.endsAt - Date.now()) / 1000));
 }
 
-function gameTick() {
-  const game = state.game;
-  if (!game || game.phase !== "active") return;
-  const secondsRemaining = secondsRemainingFor(game);
-  if (secondsRemaining <= 0) {
-    finishGame("time_up");
-    return;
-  }
-  for (const player of Object.values(state.players)) {
-    if (player.role === "HIDE") {
-      const hider = game.hiders[player.id];
-      if (!hider || hider.caughtAt) continue;
-      const objective = hider.route[hider.objectiveIndex] || null;
-      const payload = {
-        objectiveIndex: hider.objectiveIndex,
-        objective,
-        totalObjectives: hider.route.length,
-        secondsRemaining,
-        allDone: hider.objectiveIndex >= hider.route.length,
-        caughtAt: hider.caughtAt
-      };
-      for (const socketId of player.sockets) io.to(socketId).emit("hider_status", payload);
-    }
-  }
-  const seekerPayload = {
+function hiderStatusPayload(hider: HiderRunState, secondsRemaining: number) {
+  return {
+    objectiveIndex: hider.objectiveIndex,
+    objective: hider.route[hider.objectiveIndex] || null,
+    totalObjectives: hider.route.length,
+    secondsRemaining,
+    allDone: hider.objectiveIndex >= hider.route.length,
+    caughtAt: hider.caughtAt
+  };
+}
+
+function seekerStatusPayload(game: GameState, secondsRemaining: number) {
+  return {
     routes: Object.values(game.hiders)
       .filter(hider => !hider.caughtAt)
       .map(hider => ({
@@ -520,6 +523,25 @@ function gameTick() {
       })),
     secondsRemaining
   };
+}
+
+function gameTick() {
+  const game = state.game;
+  if (!game || game.phase !== "active") return;
+  const secondsRemaining = secondsRemainingFor(game);
+  if (secondsRemaining <= 0) {
+    finishGame("time_up");
+    return;
+  }
+  for (const player of Object.values(state.players)) {
+    if (player.role === "HIDE") {
+      const hider = game.hiders[player.id];
+      if (!hider || hider.caughtAt) continue;
+      const payload = hiderStatusPayload(hider, secondsRemaining);
+      for (const socketId of player.sockets) io.to(socketId).emit("hider_status", payload);
+    }
+  }
+  const seekerPayload = seekerStatusPayload(game, secondsRemaining);
   for (const player of Object.values(state.players)) {
     if (player.role === "SEEK" || player.role === "ADMIN") {
       for (const socketId of player.sockets) io.to(socketId).emit("seeker_status", seekerPayload);
@@ -577,8 +599,22 @@ function roster(): PlayerPublic[] {
     role: player.role,
     ready: player.ready,
     online: player.online,
-    joinedAt: player.joinedAt
+    joinedAt: player.joinedAt,
+    inGame: playerHasLiveTerminal(player)
   }));
+}
+
+// Whether claiming/resuming this player would yield a terminal that actually renders: gameTick
+// only delivers hider_status to uncaught hiders present in game.hiders, and seeker_status to any
+// SEEK-role player. A HIDE-role roster entry that isn't part of the running game (or was caught)
+// has no live terminal, and offering one would be a dead click.
+function playerHasLiveTerminal(player: PlayerInternal): boolean {
+  const game = state.game;
+  if (!game || game.phase !== "active") return false;
+  if (player.role === "SEEK") return true;
+  if (player.role !== "HIDE") return false;
+  const hider = game.hiders[player.id];
+  return !!hider && !hider.caughtAt;
 }
 
 function removeOfflinePlayers(includeAdmins = false) {

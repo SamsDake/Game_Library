@@ -62,9 +62,12 @@ export interface PlayerPublic {
   ready: boolean;
   online: boolean;
   joinedAt: number;
+  // Derived, not stored: whether this player has a live terminal in the active game
+  // (an uncaught hider run, or a seeker view). Drives the lobby's "open terminal" affordance.
+  inGame: boolean;
 }
 
-export interface PlayerInternal extends PlayerPublic {
+export interface PlayerInternal extends Omit<PlayerPublic, "inGame"> {
   secret: string;
   sockets: string[];
 }
