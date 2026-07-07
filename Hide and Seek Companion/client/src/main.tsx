@@ -48,6 +48,7 @@ function App() {
   const [seekerStatus, setSeekerStatus] = useState<SeekerStatusPayload | null>(null);
   const [gameOverPayload, setGameOverPayload] = useState<GameOverPayload | null>(null);
   const [adminReturnScreen, setAdminReturnScreen] = useState<Screen>("lobby");
+  const canResume = gameInProgress && ((myRole === "HIDE" && !!hiderStatus) || (myRole === "SEEK" && !!seekerStatus));
 
   const identityRef = useRef({ playerId, playerSecret });
   useEffect(() => { identityRef.current = { playerId, playerSecret }; }, [playerId, playerSecret]);
@@ -206,6 +207,10 @@ function App() {
     });
   }
 
+  function resumeGame() {
+    setScreen(myRole === "HIDE" ? "hider" : "seeker");
+  }
+
   function updateConfig(partial: Partial<GameConfig>) {
     socket.emit("admin_update_config", partial, (ack: { ok: boolean; error?: string; config?: GameConfig; estimate?: number }) => {
       if (!ack.ok) { setMessage(`Config update failed: ${ack.error || "unknown"}`); return; }
@@ -289,11 +294,13 @@ function App() {
     myReady={myReady}
     isAdmin={amAdmin}
     gameInProgress={gameInProgress}
+    canResume={canResume}
     message={message}
     onSelectRole={selectRole}
     onToggleReady={toggleReady}
     onStartGame={startGame}
     onOpenAdmin={() => setScreen("admin-lock")}
+    onResumeGame={resumeGame}
   />;
 }
 
