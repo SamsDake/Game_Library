@@ -7,6 +7,7 @@ import { formatTime, googleMapsUrl, hiderColor } from "../format";
 
 export function SeekerTerminal({ status, message, isAdmin, onEndGame, onOpenAdmin, onBackToLobby }: { status: SeekerStatusPayload; message: string; isAdmin: boolean; onEndGame: () => void; onOpenAdmin: () => void; onBackToLobby: () => void }) {
   const [focusOn, setFocusOn] = useState<LngLat | null>(null);
+  const [myLocation, setMyLocation] = useState<LngLat | null>(null);
 
   const statusLabel = (s: "upcoming" | "in_progress" | "completed") =>
     s === "completed" ? "Completed" : s === "in_progress" ? "In Progress" : "Upcoming";
@@ -22,9 +23,9 @@ export function SeekerTerminal({ status, message, isAdmin, onEndGame, onOpenAdmi
         {isAdmin && <button className="btn btn-ghost" onClick={onEndGame}>End Game</button>}
       </div>
       {message && <div className="notice">{message}</div>}
-      <LocationPanel />
+      <LocationPanel onLocationChange={setMyLocation} />
       <div className="seeker-grid">
-        <GameMap mode="seeker" hidersRoutes={status.routes} focusOn={focusOn} />
+        <GameMap mode="seeker" hidersRoutes={status.routes} focusOn={focusOn} myLocation={myLocation} />
         <div className="route-list">
           {status.routes.map(hiderRoute => <div className="hider-route-group" key={hiderRoute.hiderId}>
             <div className="hider-route-title mono">

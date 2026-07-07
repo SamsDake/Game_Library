@@ -83,10 +83,12 @@ function App() {
         setMyReady(me.ready);
       }
       // Restores the right terminal after a page refresh mid-game — this event fires immediately
-      // on every new socket connection (including a fresh page load), before join_game even resolves.
-      if (autoRestorePendingRef.current) {
+      // on every new socket connection (including a fresh page load), before join_game even resolves,
+      // so `me` may still be unresolved on that first event. Keep waiting until it resolves instead
+      // of spending the one-shot on an event where our own identity isn't known yet.
+      if (autoRestorePendingRef.current && me) {
         autoRestorePendingRef.current = false;
-        if (me?.role === "HIDE" || me?.role === "SEEK") {
+        if (me.role === "HIDE" || me.role === "SEEK") {
           if (payload.phase === "countdown") setScreen("countdown");
           else if (payload.phase === "active") setScreen(me.role === "HIDE" ? "hider" : "seeker");
         }

@@ -139,6 +139,7 @@ a.btn { display: block; text-align: center; text-decoration: none; }
 .pin-current { width: 34px; height: 34px; background: var(--orange); color: #2a0d06; }
 .pin-upcoming { width: 34px; height: 34px; background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
 .pin-done { width: 34px; height: 34px; background: var(--teal); }
+.pin-me { width: 16px; height: 16px; border-radius: 50%; background: #4d8cff; border: 3px solid #fff; box-shadow: 0 0 0 5px rgba(77, 140, 255, .35); }
 
 .countdown-num { font-size: 96px; font-weight: 700; }
 

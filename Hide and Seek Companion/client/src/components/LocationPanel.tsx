@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Geolocation } from "@capacitor/geolocation";
+import type { LngLat } from "@shared/types";
 import { googleMapsUrl } from "../format";
 
-export function LocationPanel() {
+export function LocationPanel({ onLocationChange }: { onLocationChange: (location: LngLat) => void }) {
   const [loading, setLoading] = useState(false);
   const [coords, setCoords] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [error, setError] = useState("");
@@ -12,7 +13,9 @@ export function LocationPanel() {
     setError("");
     try {
       const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true });
-      setCoords({ lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy });
+      const { latitude, longitude, accuracy } = position.coords;
+      setCoords({ lat: latitude, lng: longitude, accuracy });
+      onLocationChange([longitude, latitude]);
     } catch {
       setError("Could not get your location. Check location permissions.");
     } finally {

@@ -13,11 +13,12 @@ type AdminProps = {
   radiusM: number;
   onCenterChange: (center: LngLat) => void;
 };
-type HiderProps = { mode: "hider"; objective: Objective | null };
+type HiderProps = { mode: "hider"; objective: Objective | null; myLocation?: LngLat | null };
 type SeekerProps = {
   mode: "seeker";
   hidersRoutes: SeekerRouteView[];
   focusOn?: LngLat | null;
+  myLocation?: LngLat | null;
 };
 type Props = AdminProps | HiderProps | SeekerProps;
 
@@ -83,6 +84,7 @@ export function GameMap(props: Props) {
         L.marker([current.objective.coordinates[1], current.objective.coordinates[0]], { icon }).addTo(layer);
         map.setView([current.objective.coordinates[1], current.objective.coordinates[0]], 15);
       }
+      addMyLocationMarker(layer, current.myLocation);
       setTimeout(() => map.invalidateSize(), 200);
       return () => layer.remove();
     }
@@ -120,6 +122,7 @@ export function GameMap(props: Props) {
         L.marker([o.coordinates[1], o.coordinates[0]], { icon }).addTo(layer)
           .on("click", () => map.flyTo([o.coordinates[1], o.coordinates[0]], 16));
       }
+      addMyLocationMarker(layer, current.myLocation);
       if (allLatlngs.length) map.fitBounds(allLatlngs, { padding: [40, 40] });
       setTimeout(() => map.invalidateSize(), 200);
       return () => layer.remove();
@@ -137,8 +140,14 @@ export function GameMap(props: Props) {
   return <div ref={ref} className="map-box" />;
 }
 
+function addMyLocationMarker(layer: L.LayerGroup, location: LngLat | null | undefined) {
+  if (!location) return;
+  const icon = L.divIcon({ className: "", html: '<div class="pin-me"></div>', iconSize: [18, 18], iconAnchor: [9, 9] });
+  L.marker([location[1], location[0]], { icon, zIndexOffset: 1000 }).addTo(layer);
+}
+
 function drawSignature(props: Props): string {
   if (props.mode === "admin") return JSON.stringify(["admin", props.center, props.radiusM]);
-  if (props.mode === "hider") return JSON.stringify(["hider", props.objective?.id, props.objective?.coordinates]);
-  return JSON.stringify(["seeker", props.hidersRoutes.map(hr => [hr.hiderId, hr.route.map(o => o.id), hr.progress.map(p => p.status)])]);
+  if (props.mode === "hider") return JSON.stringify(["hider", props.objective?.id, props.objective?.coordinates, props.myLocation]);
+  return JSON.stringify(["seeker", props.hidersRoutes.map(hr => [hr.hiderId, hr.route.map(o => o.id), hr.progress.map(p => p.status)]), props.myLocation]);
 }

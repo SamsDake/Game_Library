@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { HiderStatusPayload } from "@shared/types";
+import type { HiderStatusPayload, LngLat } from "@shared/types";
 import { POI_CATEGORY_LABELS } from "@shared/types";
 import { GameMap } from "../components/GameMap";
 import { LocationPanel } from "../components/LocationPanel";
@@ -21,6 +21,7 @@ export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaugh
   const [submitFlash, setSubmitFlash] = useState(false);
   const [caughtArmedUntil, setCaughtArmedUntil] = useState(0);
   const caughtArmed = caughtArmedUntil > Date.now();
+  const [myLocation, setMyLocation] = useState<LngLat | null>(null);
 
   function pickPhoto(file: File | null) {
     setPhoto(file);
@@ -62,12 +63,12 @@ export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaugh
         {isAdmin && <button className="btn btn-ghost" onClick={onEndGame}>End Game</button>}
       </div>
       {message && <div className="notice">{message}</div>}
-      <LocationPanel />
+      <LocationPanel onLocationChange={setMyLocation} />
       {status.objective && !status.allDone && <div className="objective-card">
         <div className="objective-cat">{POI_CATEGORY_LABELS[status.objective.category]}</div>
         <div className="objective-name">{status.objective.name}</div>
         <a className="btn btn-ghost" href={googleMapsUrl(status.objective.coordinates)} target="_blank" rel="noreferrer">Open in Google Maps</a>
-        <GameMap mode="hider" objective={status.objective} />
+        <GameMap mode="hider" objective={status.objective} myLocation={myLocation} />
         <div className="proof-panel">
           {previewUrl ? <>
             <div className="photo-thumb-wrap"><img className="photo-thumb" src={previewUrl} /></div>
