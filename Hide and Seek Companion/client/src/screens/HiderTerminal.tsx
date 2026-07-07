@@ -5,7 +5,8 @@ import { GameMap } from "../components/GameMap";
 import { LocationPanel } from "../components/LocationPanel";
 import { formatTime, googleMapsUrl } from "../format";
 
-export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaught, onEndGame, onOpenAdmin, onBackToLobby }: {
+export function HiderTerminal({ name, status, message, isAdmin, onSubmitProof, onCaught, onEndGame, onOpenAdmin, onBackToLobby }: {
+  name: string;
   status: HiderStatusPayload;
   message: string;
   isAdmin: boolean;
@@ -56,6 +57,7 @@ export function HiderTerminal({ status, message, isAdmin, onSubmitProof, onCaugh
     <div className="screen">
       <div className="terminal-header">
         <button className="btn btn-ghost" onClick={onBackToLobby}>Lobby</button>
+        <div className="terminal-name">{name}</div>
         <div className="role-pill hide">HIDER</div>
         <div className="progress-pill mono">{status.objective ? `Objective ${status.objectiveIndex + 1} of ${status.totalObjectives}` : ""}</div>
         <div className="timer mono">{formatTime(status.secondsRemaining)}</div>

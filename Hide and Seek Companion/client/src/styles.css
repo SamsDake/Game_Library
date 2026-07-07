@@ -143,8 +143,9 @@ a.btn { display: block; text-align: center; text-decoration: none; }
 
 .countdown-num { font-size: 96px; font-weight: 700; }
 
-.terminal-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.terminal-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .terminal-header .btn { flex: none; }
+.terminal-name { font-weight: 700; font-size: 14px; }
 .role-pill { padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; }
 .role-pill.hide { background: var(--teal-dim); color: var(--teal); }
 .role-pill.seek { background: var(--orange-dim); color: var(--orange); }

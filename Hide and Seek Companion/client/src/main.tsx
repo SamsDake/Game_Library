@@ -321,8 +321,8 @@ function App() {
   if (screen === "admin-lock") return <AdminLock message={message} onSubmit={submitAdminPin} onBack={() => setScreen("lobby")} />;
   if (screen === "admin-panel" && config) return <AdminPanel config={config} estimate={estimate} roster={roster} message={message} onUpdateConfig={updateConfig} onStartGame={startGame} onBack={() => setScreen(adminReturnScreen)} onResetAll={playAgain} onRemoveInactive={removeInactive} />;
   if (screen === "countdown") return <Countdown secondsRemaining={countdownSeconds} />;
-  if (screen === "hider" && hiderStatus) return <HiderTerminal status={hiderStatus} message={message} isAdmin={amAdmin} onSubmitProof={submitProof} onCaught={confirmCaught} onEndGame={endGame} onOpenAdmin={openAdminPanel} onBackToLobby={backToLobby} />;
-  if (screen === "seeker" && seekerStatus) return <SeekerTerminal status={seekerStatus} message={message} isAdmin={amAdmin} onEndGame={endGame} onOpenAdmin={openAdminPanel} onBackToLobby={backToLobby} />;
+  if (screen === "hider" && hiderStatus) return <HiderTerminal name={name} status={hiderStatus} message={message} isAdmin={amAdmin} onSubmitProof={submitProof} onCaught={confirmCaught} onEndGame={endGame} onOpenAdmin={openAdminPanel} onBackToLobby={backToLobby} />;
+  if (screen === "seeker" && seekerStatus) return <SeekerTerminal name={name} status={seekerStatus} message={message} isAdmin={amAdmin} onEndGame={endGame} onOpenAdmin={openAdminPanel} onBackToLobby={backToLobby} />;
   if (screen === "end" && gameOverPayload) return <GameEnd endReason={gameOverPayload.endReason} stats={gameOverPayload.stats} gallery={gameOverPayload.gallery} isAdmin={amAdmin} onPlayAgain={playAgain} />;
   return <Lobby
     name={name}
