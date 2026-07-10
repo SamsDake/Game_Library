@@ -25,8 +25,16 @@ export function generateRoute(config: GameConfig, excludeIds?: Set<string>): Rou
     angle += (Math.random() * 120) - 60;
     const target = destPoint(anchor, angle, stepDistance);
 
+    // Prefer candidates that actually fall within the configured spacing band; only
+    // fall back to the nearest-overall pick if the pool is too sparse to satisfy it.
+    const inBand = remaining.filter(o => {
+      const d = distanceMeters(anchor, o.coordinates);
+      return d >= config.minDistanceM && d <= config.maxDistanceM;
+    });
     const preferredCategory = categories[step % categories.length];
-    const pick = nearestUnused(remaining, target, preferredCategory)
+    const pick = nearestUnused(inBand, target, preferredCategory)
+      ?? nearestUnused(inBand, target, null)
+      ?? nearestUnused(remaining, target, preferredCategory)
       ?? nearestUnused(remaining, target, null);
     if (!pick) break;
 
