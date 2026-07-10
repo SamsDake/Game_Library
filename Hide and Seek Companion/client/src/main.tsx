@@ -366,7 +366,7 @@ function startErrorText(error: string) {
     not_all_ready: "every connected player must pick a role and ready up",
     no_poi_data_for_region: "no preloaded map data for this location (only United Kingdom is preloaded)",
     not_enough_objectives: "not enough real places nearby for the requested objective count",
-    route_generation_failed: "could not build a route from the available places",
+    route_generation_failed: "could not fit the objective count within the spacing limits — loosen spacing, widen the radius, or add categories",
     admin_required: "admin access required"
   };
   return labels[error] || error;
