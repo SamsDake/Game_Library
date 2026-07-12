@@ -63,6 +63,8 @@ function App() {
   const hiderStatusRef = useRef<HiderStatusPayload | null>(null);
   useEffect(() => { hiderStatusRef.current = hiderStatus; }, [hiderStatus]);
   const gameStartedAtRef = useRef<number | null>(null);
+  // Kept for silent re-auth after a socket reconnect (admin status is per-connection server-side).
+  const adminPinRef = useRef<string | null>(null);
   const myProofsRef = useRef<ProofRecord[]>([]);
   const connectedOnceRef = useRef(false);
   // lobby_update now also broadcasts mid-game (so the roster stays live for anyone browsing the
@@ -96,16 +98,26 @@ function App() {
     };
     const onCountdownTick = (payload: CountdownTickPayload) => {
       setCountdownSeconds(payload.secondsRemaining);
-      setScreen("countdown");
+      // Roleless spectators stay where they are — the countdown/terminal screens
+      // never receive status events for them.
+      if (roleRef.current) setScreen("countdown");
     };
     const onGameStarted = (payload: GameStartedPayload) => {
       gameStartedAtRef.current = payload.game.startedAt;
       myProofsRef.current = [];
       setGameOverPayload(null);
-      setScreen(roleRef.current === "HIDE" ? "hider" : "seeker");
+      if (roleRef.current) setScreen(roleRef.current === "HIDE" ? "hider" : "seeker");
     };
-    const onHiderStatus = (payload: HiderStatusPayload) => setHiderStatus(payload);
-    const onSeekerStatus = (payload: SeekerStatusPayload) => setSeekerStatus(payload);
+    const onHiderStatus = (payload: HiderStatusPayload) => {
+      // Status events carry startedAt so a client that joined/refreshed mid-game
+      // (and never saw game_started) can still compute elapsed time.
+      if (payload.startedAt) gameStartedAtRef.current = payload.startedAt;
+      setHiderStatus(payload);
+    };
+    const onSeekerStatus = (payload: SeekerStatusPayload) => {
+      if (payload.startedAt) gameStartedAtRef.current = payload.startedAt;
+      setSeekerStatus(payload);
+    };
     const onProofAccepted = (payload: ProofAcceptedPayload) => {
       if (payload.hiderId === identityRef.current.playerId) myProofsRef.current = [...myProofsRef.current, payload.proof];
     };
@@ -147,6 +159,16 @@ function App() {
       const { playerId: pid, playerSecret: secret } = identityRef.current;
       if (connectedOnceRef.current && pid && secret && roleRef.current !== "ADMIN") {
         socket.emit("join_game", { name: localStorage.getItem("hs_name") || "Player", role: roleRef.current, playerId: pid, playerSecret: secret });
+      } else if (connectedOnceRef.current && roleRef.current === "ADMIN" && adminPinRef.current) {
+        // socket.data.isAdmin is per-connection on the server, so without a
+        // silent re-auth every admin action after a reconnect fails admin_required.
+        socket.emit("join_game", {
+          name: localStorage.getItem("hs_name") || "Admin",
+          role: "ADMIN",
+          adminPin: adminPinRef.current,
+          playerId: pid || null,
+          playerSecret: secret || null
+        });
       }
       connectedOnceRef.current = true;
     };
@@ -200,7 +222,10 @@ function App() {
       localStorage.setItem("hs_player_secret", ack.playerSecret);
       localStorage.setItem("hs_name", payload.name || name || "Player");
       if (ack.role) localStorage.setItem("hs_role", ack.role); else localStorage.removeItem("hs_role");
-      if (ack.role === "ADMIN") { setAmAdmin(true); setAdminReturnScreen("lobby"); setScreen("admin-panel"); }
+      if (ack.role === "ADMIN") {
+        if (payload.adminPin) adminPinRef.current = payload.adminPin;
+        setAmAdmin(true); setAdminReturnScreen("lobby"); setScreen("admin-panel");
+      }
     });
   }
 
@@ -338,6 +363,12 @@ function App() {
   if (screen === "countdown") return <Countdown secondsRemaining={countdownSeconds} />;
   if (screen === "hider" && hiderStatus) return <HiderTerminal name={name} status={hiderStatus} message={message} isAdmin={amAdmin} onSubmitProof={submitProof} onCaught={confirmCaught} onEndGame={endGame} onOpenAdmin={openAdminPanel} onBackToLobby={backToLobby} />;
   if (screen === "seeker" && seekerStatus) return <SeekerTerminal name={name} status={seekerStatus} message={message} isAdmin={amAdmin} onEndGame={endGame} onOpenAdmin={openAdminPanel} onBackToLobby={backToLobby} />;
+  // Terminal opened but its first status event hasn't arrived yet (e.g. a hider
+  // just became a seeker) — show a brief holding screen instead of the Lobby.
+  if (screen === "hider" || screen === "seeker") return <div className="app">
+    <div className="glow" />
+    <div className="screen center-wrap"><div className="mono">Opening terminal…</div></div>
+  </div>;
   if (screen === "end" && gameOverPayload) return <GameEnd endReason={gameOverPayload.endReason} stats={gameOverPayload.stats} gallery={gameOverPayload.gallery} isAdmin={amAdmin} onPlayAgain={playAgain} />;
   return <Lobby
     name={name}

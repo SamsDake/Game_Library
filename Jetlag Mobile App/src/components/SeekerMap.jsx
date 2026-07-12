@@ -238,7 +238,11 @@ export function SeekerMap({ state, actions, onClose }) {
   const [dedMode, setDedMode] = useState('idle');
   const [dedPending, setDedPending] = useState(null);
   const [dedStatus, setDedStatus] = useState('');
-  const currentZone = map.currentZone || map.baseZone;
+  // currentZone === null with cuts applied means the cuts eliminated the whole
+  // zone (e.g. a contradictory answer) — show that, don't fall back to the full
+  // base zone as if nothing were ruled out.
+  const zoneEliminated = !!map.baseZone && !map.currentZone && map.cuts.some(c => c.enabled !== false);
+  const currentZone = zoneEliminated ? null : (map.currentZone || map.baseZone);
 
   // Dark mask (world minus zone)
   const mask = useMemo(() => currentZone ? maskPolygon(currentZone) : null, [currentZone]);
@@ -295,7 +299,7 @@ export function SeekerMap({ state, actions, onClose }) {
               attribution=""
             />
             {/* Base zone (selected countries) */}
-            {map.baseZone && !currentZone && (
+            {map.baseZone && !currentZone && !zoneEliminated && (
               <GeoJSON key="base" data={map.baseZone} style={{ fillColor: 'rgba(255,106,43,0.25)', color: 'rgba(255,106,43,0.7)', weight: 1.5, fillOpacity: 1 }} />
             )}
             {/* Current zone (after enabled cuts) — keyed on the enabled set so a
@@ -318,6 +322,7 @@ export function SeekerMap({ state, actions, onClose }) {
           {mode === 'deduce' && dedMode === 'place-seeker' && <div className="map-placing">Tap map to drop the seeker pin</div>}
           {mode === 'deduce' && dedMode === 'place-shrink' && <div className="map-placing">Tap map to drop the shrink circle</div>}
           {mode === 'deduce' && dedMode === 'place-hotcold' && <div className="map-placing">Tap your NEW position (after travel)</div>}
+          {zoneEliminated && <div className="map-placing">Zone fully eliminated — an answer may be wrong. Disable or delete a reveal.</div>}
         </div>
 
         {/* Controls */}

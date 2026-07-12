@@ -13,6 +13,9 @@ import { HomeScreen, LobbyScreen, CountdownScreen, RelocateScreen, FoundScreen, 
 const DEVICE_KEY = 'jetlag_device_v1';
 const TWEAK_DEFAULTS = { countdownMins: 120, maxHand: MAX_HAND, drawOverride: 0 };
 const APP_BASE = import.meta.env.BASE_URL || '/';
+// Notifications created before this moment were already delivered on a previous
+// open — used to suppress replaying them as toasts/OS notifications.
+const APP_OPENED_AT = Date.now();
 let nativePushToken = null;
 let nativePushListenersReady = false;
 let nativePushRegistering = false;
@@ -132,6 +135,9 @@ function DeviceSetup({ current, onSelect, onCancel }) {
 
 function PhonePanel({ phone, store, openAdmin }) {
   const [view, setView] = useState(null);
+  // Toast dismissal is device-local: dismissing here must not remove the
+  // notification from the shared synced state (the other phone still needs it).
+  const [dismissedToasts, setDismissedToasts] = useState(() => new Set());
   const { state, actions, countdownRemaining, relocateRemaining, hideElapsed, pausedTotal } = store;
   const role = state.roles[phone];
   const common = { phone, role, state, actions, pausedTotal, onAdmin: openAdmin };
@@ -163,11 +169,15 @@ function PhonePanel({ phone, store, openAdmin }) {
     screen = <FoundScreen {...common} role={role || 'seeker'} hideElapsed={hideElapsed} />;
   }
 
-  const myToasts = role ? state.notifications.filter(n => n.to === role || n.to === 'both') : [];
+  const myToasts = role
+    ? state.notifications.filter(n =>
+        (n.to === role || n.to === 'both') && n.at >= APP_OPENED_AT && !dismissedToasts.has(n.uid))
+    : [];
+  const dismissToast = (nUid) => setDismissedToasts(prev => new Set(prev).add(nUid));
 
   return (
     <div className="phone-app">
-      <Toasts items={myToasts} onDismiss={actions.dismissNotification} />
+      <Toasts items={myToasts} onDismiss={dismissToast} />
       {screen}
     </div>
   );
@@ -233,6 +243,7 @@ export default function App() {
     const role = device ? store.state.roles[device] : null;
     store.state.notifications.forEach(n => {
       if (seenNotif.current.has(n.uid)) return;
+      if (n.at < APP_OPENED_AT) { seenNotif.current.add(n.uid); return; }
       if (role && n.to !== role && n.to !== 'both') return;
       seenNotif.current.add(n.uid);
       const opts = { body: n.text, icon: appAsset('favicon.svg') };
@@ -248,7 +259,11 @@ export default function App() {
   // ── Backend sync ──────────────────────────────────────────────────────────
   const WS_URL = import.meta.env.VITE_WS_URL || defaultWsUrl();
   const wsRef = useRef(null);
-  const remoteApplying = useRef(false);
+  // Last state object applied from the server. syncApply stores it by
+  // reference, so identity comparison in the broadcast effect below skips the
+  // echo without dropping a local update that lands in the same commit.
+  const lastRemoteStateRef = useRef(null);
+  const remoteApplying = useRef(false); // only for remote resets (new state object is unknowable here)
   const storeActionsRef = useRef(store.actions);
   storeActionsRef.current = store.actions;
   const storeStateRef = useRef(store.state);
@@ -258,6 +273,7 @@ export default function App() {
   useEffect(() => {
     if (!WS_URL) return;
     let reconnectTimer;
+    let disposed = false;
     function connect() {
       const socket = new WebSocket(WS_URL);
       wsRef.current = socket;
@@ -269,14 +285,14 @@ export default function App() {
       socket.onclose = () => {
         setSyncConnected(false);
         wsRef.current = null;
-        reconnectTimer = setTimeout(connect, 3000);
+        if (!disposed) reconnectTimer = setTimeout(connect, 3000);
       };
       socket.onerror = () => { /* close handler reconnects */ };
       socket.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
           if (msg.type === 'state') {
-            remoteApplying.current = true;
+            lastRemoteStateRef.current = msg.state;
             storeActionsRef.current.syncApply(msg.state);
           } else if (msg.type === 'empty') {
             // First client to connect — push our state to establish the session
@@ -289,11 +305,12 @@ export default function App() {
       };
     }
     connect();
-    return () => { clearTimeout(reconnectTimer); wsRef.current?.close(); };
+    return () => { disposed = true; clearTimeout(reconnectTimer); wsRef.current?.close(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (remoteApplying.current) { remoteApplying.current = false; return; }
+    if (store.state === lastRemoteStateRef.current) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'state', state: store.state }));
     }
@@ -346,6 +363,7 @@ export default function App() {
         syncConnected={WS_URL ? syncConnected : null}
         onSwitchDevice={() => { setAdminOpen(false); setSwitching(true); }}
         onKickAll={kickAll}
+        serverUrl={SERVER_URL}
       />
     </div>
   );

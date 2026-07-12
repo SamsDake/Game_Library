@@ -164,6 +164,9 @@ export interface HiderStatusPayload {
   secondsRemaining: number;
   allDone: boolean;
   caughtAt: number | null;
+  // Epoch ms the game started — lets a client that joined/refreshed mid-game
+  // (and so never saw game_started) still compute elapsed time.
+  startedAt: number | null;
 }
 
 export interface SeekerRouteProgress {
@@ -183,6 +186,8 @@ export interface SeekerRouteView {
 export interface SeekerStatusPayload {
   routes: SeekerRouteView[];
   secondsRemaining: number;
+  // See HiderStatusPayload.startedAt.
+  startedAt: number | null;
 }
 
 export interface ProofAcceptedPayload {

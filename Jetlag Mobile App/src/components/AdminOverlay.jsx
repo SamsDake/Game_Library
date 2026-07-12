@@ -138,7 +138,53 @@ function GameAreaBlock({ state, actions }) {
   );
 }
 
-function AdminBody({ onClose, state, actions, countdownRemaining, hideElapsed, relocateRemaining, device, onSwitchDevice, syncConnected, onKickAll }) {
+// ── Discord webhook: paste a URL to change where notifications get mirrored ──
+function DiscordWebhookBlock({ serverUrl }) {
+  const [url, setUrl] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [status, setStatus] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${serverUrl}/discord-webhook`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled) { setUrl(d.url || ''); setLoaded(true); } })
+      .catch(() => { if (!cancelled) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, [serverUrl]);
+
+  const save = async () => {
+    setStatus('Saving…');
+    try {
+      const res = await fetch(`${serverUrl}/discord-webhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const json = await res.json();
+      setStatus(json.ok ? (url.trim() ? 'Saved.' : 'Discord posting turned off.') : 'That doesn’t look like a Discord webhook URL.');
+    } catch {
+      setStatus('Could not reach the server.');
+    }
+  };
+
+  return (
+    <Section title="Discord notifications" badge={loaded ? (url ? 'on' : 'off') : '…'}>
+      <p className="map-hint" style={{ marginBottom: 8 }}>
+        Paste a Discord webhook URL to mirror game notifications to that channel. Leave blank and save to turn it off.
+      </p>
+      <input
+        className="text-in" style={{ marginBottom: 8 }}
+        placeholder="https://discord.com/api/webhooks/…"
+        value={url} onChange={e => setUrl(e.target.value)} disabled={!loaded}
+      />
+      <Btn full size="sm" disabled={!loaded} onClick={save}>Save webhook URL</Btn>
+      {status && <p className="map-hint" style={{ marginTop: 6 }}>{status}</p>}
+    </Section>
+  );
+}
+
+function AdminBody({ onClose, state, actions, countdownRemaining, hideElapsed, relocateRemaining, device, onSwitchDevice, syncConnected, onKickAll, serverUrl }) {
   const phases = ['lobby', 'countdown', 'hunt', 'found', 'leaderboard'];
   const cdMins = Math.round((state.countdownMs || 0) / 60000);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -170,6 +216,7 @@ function AdminBody({ onClose, state, actions, countdownRemaining, hideElapsed, r
           <div className="admin-seg">{phases.map(p => <button key={p} className={`seg-btn${state.phase === p ? ' is-on' : ''}`} onClick={() => actions.setPhase(p)}>{p}</button>)}</div>
         </Section>
         <GameAreaBlock state={state} actions={actions} />
+        <DiscordWebhookBlock serverUrl={serverUrl} />
         {state.relocateEndsAt && (
           <div className="admin-block">
             <div className="admin-label">Relocation (Move) <span className="admin-val">{fmtClock(relocateRemaining)}</span></div>
@@ -238,14 +285,14 @@ function AdminBody({ onClose, state, actions, countdownRemaining, hideElapsed, r
   );
 }
 
-export function AdminOverlay({ open, onClose, state, actions, countdownRemaining, hideElapsed, relocateRemaining, device, onSwitchDevice, syncConnected, onKickAll }) {
+export function AdminOverlay({ open, onClose, state, actions, countdownRemaining, hideElapsed, relocateRemaining, device, onSwitchDevice, syncConnected, onKickAll, serverUrl }) {
   const [authed, setAuthed] = useState(false);
   if (!open) return null;
   return (
     <div className="admin-scrim" onClick={() => { onClose(); setAuthed(false); }}>
       <div onClick={e => e.stopPropagation()}>
         {authed
-          ? <AdminBody onClose={() => { onClose(); setAuthed(false); }} state={state} actions={actions} countdownRemaining={countdownRemaining} hideElapsed={hideElapsed} relocateRemaining={relocateRemaining} device={device} onSwitchDevice={onSwitchDevice ? () => { setAuthed(false); onSwitchDevice(); } : null} syncConnected={syncConnected} onKickAll={onKickAll} />
+          ? <AdminBody onClose={() => { onClose(); setAuthed(false); }} state={state} actions={actions} countdownRemaining={countdownRemaining} hideElapsed={hideElapsed} relocateRemaining={relocateRemaining} device={device} onSwitchDevice={onSwitchDevice ? () => { setAuthed(false); onSwitchDevice(); } : null} syncConnected={syncConnected} onKickAll={onKickAll} serverUrl={serverUrl} />
           : <AdminLock onUnlock={() => setAuthed(true)} onClose={onClose} />}
       </div>
     </div>

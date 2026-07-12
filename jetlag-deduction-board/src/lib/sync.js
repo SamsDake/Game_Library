@@ -47,6 +47,10 @@ function connect() {
       const msg = JSON.parse(e.data);
       if (msg.type === 'state') {
         _readyToPush = true;
+        // Remote applies suppress pushState, so record the applied state here —
+        // otherwise a later 'empty' (server lost the room) would re-seed the
+        // room from a pre-remote snapshot.
+        _lastState = msg.data;
         if (_onRemote) _onRemote(msg.data);
       } else if (msg.type === 'empty') {
         _readyToPush = true;
@@ -69,6 +73,19 @@ export function initSync(roomId, onRemote, onStatus) {
   _onRemote = onRemote;
   _onStatus = onStatus;
   connect();
+}
+
+// Tear down the socket and stop reconnecting (App effect cleanup).
+export function disconnect() {
+  clearTimeout(_retryTimer);
+  if (_ws) {
+    _ws.onclose = null; // closing ourselves must not schedule a reconnect
+    _ws.close();
+    _ws = null;
+  }
+  _onRemote = null;
+  _onStatus = null;
+  _readyToPush = false;
 }
 
 // Called by store.persist after every local state change.

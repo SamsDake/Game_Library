@@ -239,7 +239,7 @@ export function DeductionConsole({ state, actions, countries, mapMode, setMapMod
         if (!clip.features.length) return setStatus('No such features in the zone.');
         const near = nearest(seekerPt, clip);
         ds = distanceKm(seekerPt, near);
-        buffers = multiBuffer(clip, ds, seeker);
+        buffers = multiBuffer(clip, ds);
       }
       if (!buffers) return setStatus('Could not build buffer zones.');
 

@@ -6,6 +6,18 @@
       "runtimeExecutable": "powershell",
       "runtimeArgs": ["-NoProfile", "-Command", "Set-Location 'Hide and Seek Companion'; npm.cmd run dev"],
       "port": 5173
+    },
+    {
+      "name": "deduction-board-dev",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-Command", "Set-Location 'jetlag-deduction-board'; npm.cmd run dev"],
+      "port": 5173
+    },
+    {
+      "name": "jetlag-dev",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-Command", "Set-Location 'Jetlag Mobile App'; npm.cmd run dev"],
+      "port": 5173
     }
   ]
 }

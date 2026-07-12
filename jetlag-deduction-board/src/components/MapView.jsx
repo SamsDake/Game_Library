@@ -100,18 +100,13 @@ const MASK_STYLE = { stroke: false, fillColor: '#020617', fillOpacity: 0.62, int
 const BORDER_STYLE = { color: '#7dd3fc', weight: 1, fill: false, dashArray: '3 4', interactive: false };
 
 export default function MapView({ visible = true }) {
-  const { currentZone, baseZone, seeker, countries, selectedIds } = useStore();
+  const { currentZone, baseZone, seeker, countries, selectedIds, zoneRev } = useStore();
 
-  // Build the mask AND a remount key together, only when the zone changes.
-  // react-leaflet's GeoJSON doesn't diff its `data` prop, so the key must change
-  // when the mask does. Previously the key did `JSON.stringify(mask).length` on
-  // every render of this component (which re-renders on any store change, e.g.
-  // status text or seeker moves) — serializing the whole zone each time. Doing it
-  // in the memo runs it once per actual zone change instead.
-  const { mask, maskKey } = useMemo(() => {
-    const m = currentZone ? maskPolygon(currentZone) : null;
-    return { mask: m, maskKey: m ? 'mask-' + JSON.stringify(m).length : 'mask-none' };
-  }, [currentZone]);
+  // react-leaflet's GeoJSON doesn't diff its `data` prop, so the mask/zone
+  // layers are keyed on zoneRev (bumped by the store on every zone change) to
+  // force a remount. Previously the key was JSON.stringify(...).length, which
+  // could collide between two different zones and leave a stale outline.
+  const mask = useMemo(() => (currentZone ? maskPolygon(currentZone) : null), [currentZone]);
 
   const selectedBorders = useMemo(
     () => countries.filter((c) => selectedIds.includes(c.id)).map((c) => c.feature),
@@ -150,7 +145,7 @@ export default function MapView({ visible = true }) {
 
       {/* Dark mask over everything outside the playable zone. Keyed so it
           remounts (react-leaflet GeoJSON does not diff prop data). */}
-      {mask && <GeoJSON key={maskKey} data={mask} style={MASK_STYLE} />}
+      {mask && <GeoJSON key={'mask-' + zoneRev} data={mask} style={MASK_STYLE} />}
 
       {/* Selected country borders */}
       {selectedBorders.map((f, i) => (
@@ -159,7 +154,7 @@ export default function MapView({ visible = true }) {
 
       {/* The live playable zone outline */}
       {currentZone && (
-        <GeoJSON key={'zone-' + JSON.stringify(currentZone).length} data={currentZone} style={ZONE_STYLE} />
+        <GeoJSON key={'zone-' + zoneRev} data={currentZone} style={ZONE_STYLE} />
       )}
 
       {seeker && <Marker position={[seeker.lat, seeker.lng]} icon={seekerIcon} />}

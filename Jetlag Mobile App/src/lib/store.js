@@ -422,7 +422,6 @@ export function useGameStore(cfg) {
       });
     },
     discardCard(cardUid) { patch(s => ({ ...s, hand: s.hand.filter(h => h.uid !== cardUid) })); },
-    dismissNotification(nUid) { patch(s => ({ ...s, notifications: s.notifications.filter(n => n.uid !== nUid) })); },
 
     // ── Map actions (GeoJSON-based) ──
     mapSetCountries(ids, baseZone) {

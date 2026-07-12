@@ -17,6 +17,12 @@ import { pushState } from './sync';
 // pushState call and doesn't echo the change back to the server.
 let _suppressPush = false;
 
+// True once a room snapshot has been applied from the sync server. setCountries
+// resolves after a slow ~3 MB fetch, so without this flag it would clobber the
+// already-applied room state with this phone's stale local save (and push that
+// stale state back to the room).
+let _remoteApplied = false;
+
 const LS_KEY = 'jetlag-deduction-v1';
 
 // crypto.randomUUID() only exists in secure contexts (HTTPS or localhost). When
@@ -81,6 +87,9 @@ function recompute(set, get, patch = {}) {
     currentZone,
     baseArea: areaKm2(baseZone),
     currentArea: areaKm2(currentZone),
+    // Bumped on every zone change; MapView keys its GeoJSON layers on this to
+    // force a remount (react-leaflet doesn't diff `data`).
+    zoneRev: (s.zoneRev || 0) + 1,
   };
   set(next);
   persist({ ...s, ...next });
@@ -98,6 +107,7 @@ export const useStore = create((set, get) => ({
   currentZone: null,
   baseArea: 0,
   currentArea: 0,
+  zoneRev: 0,
 
   // --- transient UI ---
   mapMode: 'idle',        // 'idle' | 'place-seeker' | 'place-shrink' | 'place-hotcold'
@@ -111,6 +121,13 @@ export const useStore = create((set, get) => ({
     // Fall back to localStorage for migration from older sessions.
     let saved = await idbStateGet();
     if (!saved) saved = loadPersistedSync();
+    if (_remoteApplied) {
+      // The room snapshot already arrived over sync (it beats the country
+      // fetch): recompute its zones now that countries are loaded, and leave
+      // the local save alone.
+      recompute(set, get, {});
+      return;
+    }
     if (saved) {
       recompute(set, get, {
         selectedIds: saved.selectedIds || [],
@@ -154,6 +171,7 @@ export const useStore = create((set, get) => ({
 
   // Apply a state snapshot received from the sync server without echoing it back.
   applyRemoteState(data) {
+    _remoteApplied = true;
     _suppressPush = true;
     try {
       recompute(set, get, {

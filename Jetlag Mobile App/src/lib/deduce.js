@@ -255,7 +255,7 @@ export async function resolveDeduction(q, ctx) {
       if (!clip.features.length) return { error: 'No such features in the zone.' };
       const near = nearest(originPt, clip);
       ds = distanceKm(originPt, near);
-      buffers = multiBuffer(clip, ds, origin);
+      buffers = multiBuffer(clip, ds);
     }
     if (!buffers) return { error: 'Could not build buffer zones.' };
     return { geometry: buffers, mode: closer ? 'intersect' : 'difference', kind: 'relative', label: `Measuring ${q.optStr}: ${val}` };

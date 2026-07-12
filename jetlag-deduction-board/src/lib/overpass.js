@@ -206,19 +206,48 @@ async function fetchFeatureUncached(key, bbox, { adminLevel = 6, max = 6000 } = 
 // the seeker where the data came from.
 const _cache = new Map();
 
+// Feature keys whose preload tier is bypassed for the rest of the session —
+// set by "Refresh data" (invalidateFeature) so the next pull really goes to
+// the network instead of being satisfied from the bundle again.
+const _bypassPreload = new Set();
+
 function cacheKey(key, bbox, adminLevel) {
   const r = bbox.map((v) => v.toFixed(3)).join(',');
   return `${key}|${r}|${adminLevel ?? ''}`;
 }
 
+// Does any preloaded feature fall inside the requested bbox? The bundle only
+// covers a fixed set of countries, so a query over a non-bundled country must
+// fall through to the cache/network path instead of returning bundle-only data
+// that the caller would clip away to nothing.
+function anyFeatureInBbox(fc, bbox) {
+  const [w, s, e, n] = bbox;
+  const inBox = (c) => c[0] >= w && c[0] <= e && c[1] >= s && c[1] <= n;
+  for (const f of fc.features || []) {
+    const g = f.geometry;
+    if (!g) continue;
+    // Any vertex inside counts (points, lines and polygons alike).
+    const stack = [g.coordinates];
+    while (stack.length) {
+      const c = stack.pop();
+      if (typeof c[0] === 'number') { if (inBox(c)) return true; }
+      else for (const cc of c) stack.push(cc);
+    }
+  }
+  return false;
+}
+
 export async function fetchFeature(key, bbox, opts = {}) {
   // Tier 0: preloaded bundle (instant, offline, authoritative for the bundled
-  // countries). If a preload file exists for this feature, use it and skip the
-  // cache/network entirely. The caller clips to the current zone locally.
-  try {
-    const pre = await fetchFeaturePreloaded(key, opts.adminLevel, FEATURES[key]?.geom);
-    if (pre && pre.fc?.features?.length > 0) return pre;
-  } catch { /* fall through to cache/network */ }
+  // countries). If a preload file exists for this feature AND covers the
+  // requested area, use it and skip the cache/network entirely. The caller
+  // clips to the current zone locally.
+  if (!_bypassPreload.has(key)) {
+    try {
+      const pre = await fetchFeaturePreloaded(key, opts.adminLevel, FEATURES[key]?.geom);
+      if (pre && pre.fc?.features?.length > 0 && anyFeatureInBbox(pre.fc, bbox)) return pre;
+    } catch { /* fall through to cache/network */ }
+  }
 
   const ck = cacheKey(key, bbox, opts.adminLevel);
 
@@ -255,6 +284,7 @@ export function clearFeatureCache() {
   return idbClear(''); // returns a promise; callers may ignore
 }
 export function invalidateFeature(key) {
+  _bypassPreload.add(key); // "Refresh data" must not be satisfied from the bundle
   for (const k of _cache.keys()) if (k.startsWith(key + '|')) _cache.delete(k);
   return idbClear(key + '|');
 }

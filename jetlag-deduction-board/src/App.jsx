@@ -6,7 +6,7 @@ import MapView from './components/MapView';
 import CountrySelect from './components/CountrySelect';
 import QuestionPanel from './components/QuestionPanel';
 import ClueTimeline from './components/ClueTimeline';
-import { initSync, syncEnabled } from './lib/sync';
+import { initSync, disconnect, syncEnabled } from './lib/sync';
 
 // Read room ID from URL hash (#room=XXXX). If absent, generate one and write
 // it into the hash so it can be shared with the second phone via copy-paste.
@@ -46,6 +46,7 @@ export default function App() {
   useEffect(() => {
     if (syncEnabled()) {
       initSync(roomId, applyRemoteState, setSyncStatus);
+      return disconnect;
     }
   }, [roomId, applyRemoteState]);
 

@@ -28,7 +28,24 @@ webpush.setVapidDetails('mailto:admin@comicsams.cloud', vapidKeys.publicKey, vap
 let fcm = null;
 let apns = null;
 
-const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1513567338694447376/OC8ZhE8CzvRedgZ3nxlhY_ODjhE-Nx6gnkne3QrSxhK5SAtUc7TFJkCPUS_VSsLJEgon';
+// Webhook URL is admin-editable from the app's admin panel (POST /discord-webhook),
+// so it's mutable and persisted to disk — that override then wins on every boot
+// over the env var/hardcoded default, until cleared or changed again.
+const DISCORD_WEBHOOK_FILE = './discord-webhook.json';
+let DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL
+  || 'https://discord.com/api/webhooks/1513567338694447376/OC8ZhE8CzvRedgZ3nxlhY_ODjhE-Nx6gnkne3QrSxhK5SAtUc7TFJkCPUS_VSsLJEgon';
+if (fs.existsSync(DISCORD_WEBHOOK_FILE)) {
+  try {
+    const saved = JSON.parse(fs.readFileSync(DISCORD_WEBHOOK_FILE, 'utf8'));
+    if (typeof saved.url === 'string') DISCORD_WEBHOOK_URL = saved.url;
+  } catch { /* ignore corrupt file, keep the default above */ }
+}
+function saveDiscordWebhook() {
+  try { fs.writeFileSync(DISCORD_WEBHOOK_FILE, JSON.stringify({ url: DISCORD_WEBHOOK_URL })); } catch { /* best-effort persistence */ }
+}
+// Only accept real Discord webhook URLs — the server does a bare server-side
+// POST to whatever this is set to, so an unchecked URL would be an SSRF hole.
+const DISCORD_WEBHOOK_RE = /^https:\/\/(discord|discordapp)\.com\/api\/webhooks\/\d+\/[\w-]+$/;
 const DISCORD_HIDERS_MENTION  = '<@&1513568198832951338>';
 const DISCORD_SEEKERS_MENTION = '<@&1513568328612839434>';
 
@@ -214,10 +231,33 @@ function base64Url(value) {
 fcm = initFirebase();
 apns = initApns();
 
+// uids that have already been pushed. Deduping against this set (rather than
+// only the previous state snapshot) prevents re-pushing retained notifications
+// after a server restart and after an out-of-order state overwrite.
+const pushedUids = new Set();
+const PUSHED_UIDS_MAX = 200;
+
+function rememberPushed(uid) {
+  pushedUids.add(uid);
+  if (pushedUids.size > PUSHED_UIDS_MAX) {
+    for (const old of pushedUids) {
+      if (pushedUids.size <= PUSHED_UIDS_MAX) break;
+      pushedUids.delete(old);
+    }
+  }
+}
+
 function diffAndPush(prev, next) {
+  if (prev === null) {
+    // First state after boot: these notifications were already delivered
+    // before the restart — mark them seen without pushing.
+    for (const n of (next.notifications || [])) rememberPushed(n.uid);
+    return;
+  }
   const prevUids = new Set((prev?.notifications || []).map(n => n.uid));
   for (const n of (next.notifications || [])) {
-    if (prevUids.has(n.uid)) continue;
+    if (prevUids.has(n.uid) || pushedUids.has(n.uid)) continue;
+    rememberPushed(n.uid);
     if (n.to === 'both') {
       sendPush('A', n.title, n.text);
       sendPush('B', n.title, n.text);
@@ -230,6 +270,7 @@ function diffAndPush(prev, next) {
 }
 
 function sendDiscordWebhook(title, text, to) {
+  if (!DISCORD_WEBHOOK_URL) return; // cleared from the admin panel — Discord posting is off
   let mention = '';
   if (to === 'both') mention = `${DISCORD_HIDERS_MENTION} ${DISCORD_SEEKERS_MENTION} `;
   else if (to === 'hider') mention = `${DISCORD_HIDERS_MENTION} `;
@@ -266,6 +307,38 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/vapid-public-key') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ publicKey: vapidKeys.publicKey }));
+    return;
+  }
+
+  // Admin panel: view/change where Discord notifications get posted.
+  if (req.method === 'GET' && req.url === '/discord-webhook') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ url: DISCORD_WEBHOOK_URL }));
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/discord-webhook') {
+    let body = '';
+    req.on('data', d => { body += d; });
+    req.on('end', () => {
+      try {
+        const { url } = JSON.parse(body);
+        const trimmed = String(url || '').trim();
+        if (trimmed && !DISCORD_WEBHOOK_RE.test(trimmed)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: 'invalid_webhook_url' }));
+          return;
+        }
+        DISCORD_WEBHOOK_URL = trimmed;
+        saveDiscordWebhook();
+        console.log(`[discord] webhook URL ${trimmed ? 'updated' : 'cleared'} via admin panel`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'bad_request' }));
+      }
+    });
     return;
   }
 

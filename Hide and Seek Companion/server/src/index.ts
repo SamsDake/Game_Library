@@ -324,19 +324,20 @@ io.on("connection", socket => {
     let hiders = Object.values(state.players).filter(p => p.role === "HIDE");
     let seekers = Object.values(state.players).filter(p => p.role === "SEEK");
     // Let the requesting admin fill whichever single role is missing and ready up,
-    // so a 2-person lobby (admin + one other player) can start a game.
+    // so a 2-person lobby (admin + one other player) can start a game. Only a
+    // candidate at this point — the role is committed after every validation
+    // below passes, so a failed start doesn't leave the admin converted into a
+    // ready player.
     const adminPlayer = state.players[socket.data.playerId];
+    let adminFill: "HIDE" | "SEEK" | null = null;
     if (adminPlayer && !hiders.length && seekers.length) {
-      adminPlayer.role = "HIDE";
-      adminPlayer.ready = true;
+      adminFill = "HIDE";
       hiders = [adminPlayer];
     } else if (adminPlayer && !seekers.length && hiders.length) {
-      adminPlayer.role = "SEEK";
-      adminPlayer.ready = true;
+      adminFill = "SEEK";
       seekers = [adminPlayer];
     }
     if (!hiders.length || !seekers.length) return ack({ ok: false, error: "need_hider_and_seeker" });
-    broadcastLobby();
     const connectedNonAdmins = Object.values(state.players).filter(p => p.role !== "ADMIN" && p.online);
     const notReady = connectedNonAdmins.some(p => !p.role || !p.ready);
     if (notReady) return ack({ ok: false, error: "not_all_ready" });
@@ -371,6 +372,10 @@ io.on("connection", socket => {
       seekerIds: seekers.map(p => p.id),
       allProofs: []
     };
+    if (adminFill && adminPlayer) {
+      adminPlayer.role = adminFill;
+      adminPlayer.ready = true;
+    }
     state.phase = "countdown";
     state.game = game;
     saveState();
@@ -451,7 +456,10 @@ function applyConfig(current: GameConfig, payload: AdminConfigPayload): GameConf
   const minDistanceM = clampNumber(payload.minDistanceM, current.minDistanceM, 100, 2000);
   const maxDistanceM = Math.max(clampNumber(payload.maxDistanceM, current.maxDistanceM, 150, 3000), minDistanceM + 50);
   const totalMinutes = clampNumber(payload.totalMinutes, current.totalMinutes, 10, 120);
-  const categories = payload.categories?.length ? payload.categories.filter(c => (OBJECTIVE_CATEGORIES as string[]).includes(c)) : current.categories;
+  // Filter first: a non-empty payload of only-invalid categories must fall back
+  // to the current set, not store [] (which would make every route gen fail).
+  const validCategories = (payload.categories ?? []).filter(c => (OBJECTIVE_CATEGORIES as string[]).includes(c));
+  const categories = validCategories.length ? validCategories : current.categories;
   const objectiveCount = Math.round(clampNumber(payload.objectiveCount, current.objectiveCount, 3, 15));
   const sameRouteForAll = typeof payload.sameRouteForAll === "boolean" ? payload.sameRouteForAll : current.sameRouteForAll;
   return { centerLat, centerLng, radiusM, minDistanceM, maxDistanceM, totalMinutes, categories, objectiveCount, sameRouteForAll };
@@ -503,7 +511,8 @@ function hiderStatusPayload(hider: HiderRunState, secondsRemaining: number) {
     totalObjectives: hider.route.length,
     secondsRemaining,
     allDone: hider.objectiveIndex >= hider.route.length,
-    caughtAt: hider.caughtAt
+    caughtAt: hider.caughtAt,
+    startedAt: state.game?.startedAt ?? null
   };
 }
 
@@ -521,7 +530,8 @@ function seekerStatusPayload(game: GameState, secondsRemaining: number) {
           completedAt: completedAtForHider(hider, index, game.startedAt)
         }))
       })),
-    secondsRemaining
+    secondsRemaining,
+    startedAt: game.startedAt
   };
 }
 
@@ -697,6 +707,16 @@ function boot() {
     app.get("*", (_req, res) => {
       res.status(503).send("Client build missing. Run npm run build, or use npm run client:dev during development.");
     });
+  }
+
+  // A restart mid-countdown would otherwise leave the persisted phase stuck on
+  // "countdown" forever — beginActive() is only reached from the countdown timer.
+  if (state.phase === "countdown") {
+    if (state.game) startCountdown();
+    else {
+      state.phase = "lobby";
+      saveState();
+    }
   }
 
   setInterval(gameTick, 1000);
