@@ -93,9 +93,11 @@ button, input { font: inherit; }
 .footer-btns { display: flex; gap: 10px; }
 
 .btn {
-  flex: 1; background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  flex: 0 0 auto; background: var(--surface2); border: 1px solid var(--border); color: var(--text);
   padding: 13px 18px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer;
 }
+/* Buttons only share row width where they sit in a dedicated action row. */
+.footer-btns .btn, .proof-actions .btn { flex: 1; }
 .btn-primary, .btn-teal { background: var(--teal); border-color: var(--teal); color: #06251c; }
 .btn-ghost { background: transparent; }
 a.btn { display: block; text-align: center; text-decoration: none; }
@@ -143,7 +145,8 @@ a.btn { display: block; text-align: center; text-decoration: none; }
 
 .countdown-num { font-size: 96px; font-weight: 700; }
 
-.terminal-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.terminal-header { display: flex; align-items: center; justify-content: flex-start; gap: 10px; flex-wrap: wrap; }
+.terminal-header .timer { margin-left: auto; }
 .terminal-header .btn { flex: none; }
 .terminal-name { font-weight: 700; font-size: 14px; }
 .role-pill { padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; }

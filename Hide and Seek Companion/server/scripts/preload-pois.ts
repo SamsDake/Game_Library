@@ -84,7 +84,10 @@ async function fetchCategory(areaFilter: string, category: PoiCategory): Promise
     body: new URLSearchParams({ data: query })
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} for category ${category}`);
-  const json = await res.json() as { elements?: OverpassElement[] };
+  const json = await res.json() as { elements?: OverpassElement[]; remark?: string };
+  // Overpass returns HTTP 200 with a `remark` (e.g. a query timeout) instead of an error status,
+  // which would otherwise be cached as a silent, permanent 0-result for the category.
+  if (json.remark) throw new Error(`Overpass remark for category ${category}: ${json.remark}`);
   return (json.elements || [])
     .map(osmElementToObjective)
     .filter((o): o is Objective => !!o);
