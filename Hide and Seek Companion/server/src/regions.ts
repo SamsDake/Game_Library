@@ -8,7 +8,8 @@ export interface RegionDef {
 }
 
 export const REGIONS: RegionDef[] = [
-  { id: "united-kingdom", label: "United Kingdom", overpassAreaQuery: '["ISO3166-1"="GB"][admin_level=2]' }
+  { id: "united-kingdom", label: "United Kingdom", overpassAreaQuery: '["ISO3166-1"="GB"][admin_level=2]' },
+  { id: "france", label: "France", overpassAreaQuery: '["ISO3166-1"="FR"][admin_level=2]' }
 ];
 
 export function findRegion(id: string): RegionDef | undefined {

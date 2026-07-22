@@ -395,7 +395,7 @@ function startErrorText(error: string) {
   const labels: Record<string, string> = {
     need_hider_and_seeker: "need at least one HIDE and one SEEK player",
     not_all_ready: "every connected player must pick a role and ready up",
-    no_poi_data_for_region: "no preloaded map data for this location (only United Kingdom is preloaded)",
+    no_poi_data_for_region: "no preloaded map data for this location (only United Kingdom and France are preloaded)",
     not_enough_objectives: "not enough real places nearby for the requested objective count",
     route_generation_failed: "could not fit the objective count within the spacing limits — loosen spacing, widen the radius, or add categories",
     admin_required: "admin access required"
