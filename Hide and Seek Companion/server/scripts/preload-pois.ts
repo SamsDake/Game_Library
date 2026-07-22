@@ -29,14 +29,20 @@ async function main() {
   console.log(`[preload-pois] fetching ${OVERPASS_CATEGORIES.length} categories for ${region.label}...`);
 
   const failed: string[] = [];
-  for (const [index, cat] of OVERPASS_CATEGORIES.entries()) {
-    if (index > 0) await sleep(MIN_FETCH_GAP_MS);
+  let fetchedAny = false;
+  for (const cat of OVERPASS_CATEGORIES) {
+    const outFile = path.join(outDir, `${cat.category}.json`);
+    if (fs.existsSync(outFile)) {
+      console.log(`[preload-pois] ${cat.category}: already cached, skipping`);
+      continue;
+    }
+    if (fetchedAny) await sleep(MIN_FETCH_GAP_MS);
+    fetchedAny = true;
     const objectives = await fetchCategoryWithRetries(region.overpassAreaQuery, cat.category);
     if (!objectives) {
       failed.push(cat.category);
       continue;
     }
-    const outFile = path.join(outDir, `${cat.category}.json`);
     fs.writeFileSync(outFile, JSON.stringify(objectives));
     console.log(`[preload-pois] ${cat.category}: ${objectives.length} POIs -> ${outFile}`);
   }
